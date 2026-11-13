@@ -150,6 +150,16 @@
     return out.filter((p) => s * (p - entry) > 0);
   }
 
+  /* Níveis fortes contrários à operação: S/R H1 com 4+ toques, S/R H4 com 3+ toques, máx/mín do dia e da semana. */
+  function strongObstacles(dir, ctx, entry) {
+    const s = sgn(dir), out = [];
+    for (const l of ctx.tf.H1.levels) if (l.touches >= 4) out.push({ price: l.price, desc: 'H1 ' + l.price.toFixed(2) + ', ' + l.touches + ' toques' });
+    for (const l of ctx.tf.H4.levels) if (l.touches >= 3) out.push({ price: l.price, desc: 'H4 ' + l.price.toFixed(2) + ', ' + l.touches + ' toques' });
+    const names = { pdh: 'máxima de ontem', pdl: 'mínima de ontem', pwh: 'máxima da semana passada', pwl: 'mínima da semana passada' };
+    for (const k in names) if (ctx.period[k] != null) out.push({ price: ctx.period[k], desc: names[k] + ' ' + ctx.period[k].toFixed(2) });
+    return out.filter((o) => s * (o.price - entry) > 0);
+  }
+
   function evaluate(setup, ctx, asset, settings) {
     const { tf, price, session } = ctx;
     const entry = setup.triggered ? price : setup.entryWatch;
@@ -168,12 +178,24 @@
     };
     const score = Object.values(breakdown).reduce((a, b) => a + b, 0);
     const sc = settings.score;
+    // Travas de ENTRADA: score alto não basta. Sem espaço até o alvo, fora de Londres/NY ou operando
+    // contra um nível forte logo à frente, o sinal fica no máximo em OBSERVAR.
+    const s = sgn(setup.dir);
+    const strong = strongObstacles(setup.dir, ctx, entry)
+      .map((o) => ({ ...o, r: s * (o.price - entry) / plan.R }))
+      .filter((o) => o.r > 0 && o.r < 1.5)
+      .sort((a, b) => a.r - b.r);
+    const blocks = [];
+    if (!session.good) blocks.push('fora das sessões de Londres/Nova York (' + session.label + ')');
+    if (plan.rrNext < 1) blocks.push('o próximo nível contrário está a só ' + plan.rrNext.toFixed(2) + 'R (o risco é maior que o caminho livre)');
+    if (strong.length) blocks.push((setup.dir === 'venda' ? 'suporte' : 'resistência') + ' forte (' + strong[0].desc + ') a ' + strong[0].r.toFixed(2) + 'R da entrada');
     let status = 'SEM SETUP';
-    if (setup.triggered && score >= sc.entryMin && ses.pts > 0) status = 'ENTRADA';
+    if (setup.triggered && score >= sc.entryMin && !blocks.length) status = 'ENTRADA';
     else if (score >= sc.watchMin || setup.area.distAtr <= 1.5) status = 'OBSERVAR';
     if (setup.align.pts === 0 && status !== 'SEM SETUP' && score < sc.watchMin) status = 'SEM SETUP';
     const size = MA.risk.positionSize({ entry: plan.entry, sl: plan.sl, pip: asset.pip, pipValue: asset.pipValue, accountSize: settings.accountSize, riskPct: settings.riskPct });
     const warnings = [...plan.notes];
+    if (setup.triggered && blocks.length) warnings.unshift('Gatilho ocorreu, mas ENTRADA bloqueada: ' + blocks.join('; ') + '.');
     if (ses.pts === 0) warnings.push(ses.text);
     if (vol.pts === 0) warnings.push(vol.text);
     if (plan.rrNext < 1.5) warnings.push('Pouco espaço até o próximo nível contrário (R:R ' + plan.rrNext.toFixed(2) + ').');
