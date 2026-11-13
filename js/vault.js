@@ -1,2 +1,2 @@
-/* Gerado por scripts/make-vault.js — chaves criptografadas (AES-256-GCM). null = cofre ainda não criado. */
-(function (MA) { MA.VAULT = null; })(globalThis.MA = globalThis.MA || {});
+/* Gerado por scripts/make-vault.js — chaves criptografadas (AES-256-GCM). */
+(function (MA) { MA.VAULT = {"v":1,"iter":600000,"salt":"/coSJH3JIQIlpJ+Ht0eG9w==","iv":"1EpKDOT4FyyLGYdN","ct":"mOAIS92mvQxyBwVkJ/gJkCV594Hj48CJCAIRlJ4Kn7eiH7fcbGvmdO8UsNvyU8U7IRze68I49AE+k+G7TYQ8MnGpx/lwKIeRTlbsC3ifVJAt6+FykBQLIOZvYedSgpk5vtJYy7xgn5Ru7xhz5LB8aVxXUhd3aZBPki5wL/Yj7T0="}; })(globalThis.MA = globalThis.MA || {});
