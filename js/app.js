@@ -80,7 +80,9 @@
     if (!state.settings.tdKey) missing.push('a chave do <b>Twelve Data</b> (cotações)');
     if (!state.settings.geminiKey) missing.push('a chave do <b>Gemini</b> (IA)');
     hint.classList.toggle('hidden', !missing.length);
-    hint.innerHTML = 'Para começar, informe ' + missing.join(' e ') + ' em <a href="#" id="go-config">Configurações</a>. As duas são gratuitas.';
+    hint.innerHTML = MA.auth.hasVault()
+      ? 'Chaves bloqueadas neste aparelho. <a href="#" id="go-login">Entrar</a> para desbloquear.'
+      : 'Para começar, informe ' + missing.join(' e ') + ' em <a href="#" id="go-config">Configurações</a>. As duas são gratuitas.';
   }
 
   async function rankAI() {
@@ -231,13 +233,57 @@
     for (const a of enabled()) await analyze(a, { cacheOnly: true });
   }
 
+  // ---------------- login / cofre ----------------
+  let afterLogin = null;
+  function openConfig() {
+    if (MA.auth.hasVault() && !MA.auth.isAdmin()) return openLogin('config');
+    renderConfig(); show('config');
+  }
+  function openLogin(target) {
+    afterLogin = target;
+    $('login-err').textContent = '';
+    $('l-pass').value = '';
+    $('l-remember').checked = MA.auth.remember();
+    $('login').classList.remove('hidden');
+    $('l-user').focus();
+  }
+  function closeLogin() { $('login').classList.add('hidden'); }
+  async function doLogin() {
+    const btn = $('l-go');
+    btn.disabled = true; $('login-err').textContent = ''; $('login-msg').textContent = 'Verificando…';
+    const data = await MA.auth.decrypt(MA.VAULT, $('l-user').value, $('l-pass').value);
+    $('login-msg').textContent = 'Desbloqueia as chaves salvas e as configurações.';
+    btn.disabled = false;
+    if (!data) { $('login-err').textContent = 'Usuário ou senha incorretos.'; $('l-pass').value = ''; $('l-pass').focus(); return; }
+    MA.auth.setRemember($('l-remember').checked);
+    MA.auth.setAdmin(true);
+    state.settings.tdKey = data.tdKey || state.settings.tdKey;
+    state.settings.geminiKey = data.geminiKey || state.settings.geminiKey;
+    MA.settings.save(state.settings);
+    closeLogin();
+    if (afterLogin === 'config') { renderConfig(); show('config'); } else renderList();
+  }
+  function logout() {
+    state.settings.tdKey = ''; state.settings.geminiKey = '';
+    MA.auth.setAdmin(false);
+    MA.settings.save(state.settings);
+    MA.data.clearCache(); state.results = {}; state.ai = {};
+    show('painel'); renderList(); setStatus('Chaves removidas deste aparelho.');
+  }
+
   // ---------------- eventos ----------------
   function bind() {
-    document.querySelectorAll('.nav').forEach((b) => b.addEventListener('click', () => { if (b.dataset.view === 'config') renderConfig(); show(b.dataset.view); }));
+    document.querySelectorAll('.nav').forEach((b) => b.addEventListener('click', () => (b.dataset.view === 'config' ? openConfig() : show(b.dataset.view))));
     $('btn-scan').addEventListener('click', scanAll);
     $('btn-rank').addEventListener('click', rankAI);
     $('list').addEventListener('click', (e) => { const row = e.target.closest('.row'); if (row) openAsset(row.dataset.asset); });
-    $('setup-hint').addEventListener('click', (e) => { if (e.target.id === 'go-config') { e.preventDefault(); renderConfig(); show('config'); } });
+    $('setup-hint').addEventListener('click', (e) => {
+      if (e.target.id === 'go-config') { e.preventDefault(); openConfig(); }
+      if (e.target.id === 'go-login') { e.preventDefault(); openLogin(null); }
+    });
+    $('login-form').addEventListener('submit', (e) => { e.preventDefault(); doLogin(); });
+    $('l-cancel').addEventListener('click', closeLogin);
+    $('btn-logout').addEventListener('click', logout);
     $('btn-back').addEventListener('click', () => { show('painel'); renderList(); });
     $('btn-refresh').addEventListener('click', async () => {
       $('btn-refresh').disabled = true;

@@ -186,3 +186,14 @@ test('gatilho RSI', () => {
   assert.ok(!MA.setups.rsiTrigger('compra', [40, 41, 42, 43, 44, 45, 46, 47, 48]));
   assert.ok(MA.setups.rsiTrigger('venda', [60, 72, 75, 73, 71, 72, 70, 71, 68]));
 });
+
+// ---------------- cofre ----------------
+require('../js/auth.js');
+test('cofre: criptografa e abre com usuário/senha corretos, recusa errados', async () => {
+  const data = { tdKey: 'td-123', geminiKey: 'gm-456' };
+  const v = await MA.auth.encrypt(data, 'Bryan', 'senha-forte-123!', 1000);
+  assert.ok(!JSON.stringify(v).includes('td-123'), 'chave não aparece em texto puro');
+  assert.deepEqual(await MA.auth.decrypt(v, 'bryan ', 'senha-forte-123!'), data); // usuário sem diferenciar maiúsc./espaço
+  assert.equal(await MA.auth.decrypt(v, 'bryan', 'senha-errada'), null);
+  assert.equal(await MA.auth.decrypt(v, 'outro', 'senha-forte-123!'), null);
+});

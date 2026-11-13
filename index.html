@@ -84,10 +84,27 @@
       <div class="toolbar">
         <button id="btn-save" class="primary">Salvar</button>
         <button id="btn-clear">Limpar cache</button>
+        <button id="btn-logout">Sair e esquecer chaves deste aparelho</button>
         <span id="save-status" class="muted"></span>
       </div>
     </section>
   </main>
+
+  <!-- LOGIN -->
+  <div id="login" class="modal hidden" role="dialog" aria-modal="true" aria-labelledby="login-title">
+    <form id="login-form" class="card modal-box" autocomplete="on">
+      <h2 id="login-title">Entrar</h2>
+      <p class="muted" id="login-msg">Desbloqueia as chaves salvas e as configurações.</p>
+      <label>Usuário <input id="l-user" autocomplete="username" required></label>
+      <label>Senha <input id="l-pass" type="password" autocomplete="current-password" required></label>
+      <label class="chk"><input type="checkbox" id="l-remember" checked> Lembrar neste aparelho</label>
+      <p id="login-err" class="err"></p>
+      <div class="toolbar">
+        <button type="submit" class="primary" id="l-go">Entrar</button>
+        <button type="button" id="l-cancel">Cancelar</button>
+      </div>
+    </form>
+  </div>
 
   <footer>Ferramenta de estudo e apoio à decisão. <strong>Não é recomendação de investimento.</strong> Dados: Twelve Data. Gráficos: TradingView Lightweight Charts.</footer>
 
@@ -99,6 +116,8 @@
   <script src="js/risk.js"></script>
   <script src="js/setups.js"></script>
   <script src="js/ai.js"></script>
+  <script src="js/vault.js"></script>
+  <script src="js/auth.js"></script>
   <script src="js/chart.js"></script>
   <script src="js/app.js"></script>
 </body>

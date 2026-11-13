@@ -53,8 +53,11 @@
     return s;
   }
 
+  /* Sem "lembrar neste aparelho", as chaves ficam só na memória da aba (não vão para o armazenamento). */
   function save(s) {
-    try { localStorage.setItem(KEY, JSON.stringify(s)); return true; } catch (e) { return false; }
+    const out = Object.assign({}, s);
+    if (MA.auth && !MA.auth.remember()) { out.tdKey = ''; out.geminiKey = ''; }
+    try { localStorage.setItem(KEY, JSON.stringify(out)); return true; } catch (e) { return false; }
   }
 
   MA.settings = { load, save };

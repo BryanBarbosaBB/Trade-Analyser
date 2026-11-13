@@ -30,6 +30,22 @@ SL e TP, e o botão **Analisar com IA**.
 - **NAS100/US30:** os índices (`NDX`/`DJI`) não estão no plano grátis. Por isso a página usa os ETFs **QQQ/DIA**, que acompanham os mesmos índices. Servem para ler tendência e estrutura, mas o preço é diferente do índice e o lote não é calculado.
 - **Gemini:** quando o modelo principal está sobrecarregado ou não responde em 25 s, a página tenta de novo e depois troca sozinha para `gemini-flash-lite-latest`.
 
+## Login e chaves salvas no site (cofre)
+As chaves podem ficar gravadas no site, **criptografadas** (AES-256-GCM, chave derivada de usuário e senha com PBKDF2, 600 mil iterações). Com o cofre criado:
+- Na primeira vez em cada aparelho, clique em **Entrar** e informe usuário e senha. Com **Lembrar neste aparelho** marcado, o painel passa a abrir direto, já com as chaves.
+- **Configurações** sempre pedem login de novo a cada sessão.
+- **Sair e esquecer chaves deste aparelho** apaga as chaves do navegador.
+
+Criar ou trocar o cofre (rode no seu terminal):
+```
+cd C:\CLAUDEnalisador-web
+node scripts/make-vault.js
+git add js/vault.js
+git commit -m "Atualiza cofre"
+git push
+```
+O arquivo do cofre é público, então qualquer um pode testar senhas nele sem limite. Use uma senha forte, com 12 caracteres ou mais; o script recusa senhas curtas.
+
 ## Usar no PC agora
 Os arquivos funcionam abrindo o `index.html` direto. Se o navegador bloquear, sirva a pasta:
 ```
