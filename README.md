@@ -38,7 +38,7 @@ As chaves podem ficar gravadas no site, **criptografadas** (AES-256-GCM, chave d
 
 Criar ou trocar o cofre (rode no seu terminal):
 ```
-cd C:\CLAUDEnalisador-web
+cd C:CLAUDEnalisador-web
 node scripts/make-vault.js
 git add js/vault.js
 git commit -m "Atualiza cofre"
