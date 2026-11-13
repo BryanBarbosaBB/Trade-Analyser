@@ -1,0 +1,105 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <title>Analisador de Mercado</title>
+  <meta name="theme-color" content="#0f1419">
+  <link rel="stylesheet" href="css/style.css">
+</head>
+<body>
+  <header class="top">
+    <div class="brand">Analisador de Mercado</div>
+    <nav>
+      <button data-view="painel" class="nav active">Painel</button>
+      <button data-view="config" class="nav">Configurações</button>
+    </nav>
+  </header>
+
+  <main>
+    <!-- PAINEL -->
+    <section id="v-painel" class="view">
+      <div class="toolbar">
+        <button id="btn-scan" class="primary">Varrer todos</button>
+        <button id="btn-rank">Ranking IA</button>
+        <span id="scan-status" class="muted"></span>
+      </div>
+      <div id="setup-hint" class="hint hidden"></div>
+      <div id="rank-box" class="card hidden"></div>
+      <div class="list-head">
+        <span>Ativo</span><span>D1 H4 H1 M15</span><span>Setup</span><span>Score</span><span>Status</span><span>Atualizado</span>
+      </div>
+      <div id="list"></div>
+    </section>
+
+    <!-- DETALHE -->
+    <section id="v-detalhe" class="view hidden">
+      <div class="detail-head">
+        <button id="btn-back">← Painel</button>
+        <h1 id="d-title"></h1>
+        <span id="d-status"></span>
+        <button id="btn-refresh" class="right">Atualizar</button>
+      </div>
+      <div class="tf-tabs" id="tf-tabs">
+        <button data-tf="D1">D1</button><button data-tf="H4">H4</button><button data-tf="H1">H1</button><button data-tf="M15" class="active">M15</button>
+        <label class="chk"><input type="checkbox" id="opt-zones" checked> Zonas</label>
+        <label class="chk"><input type="checkbox" id="opt-levels" checked> S/R</label>
+        <label class="chk"><input type="checkbox" id="opt-ema" checked> EMAs</label>
+      </div>
+      <div class="chart-wrap">
+        <div id="chart"></div>
+        <canvas id="overlay"></canvas>
+      </div>
+      <div id="rsi-chart"></div>
+      <div class="grid">
+        <div class="card" id="c-setup"></div>
+        <div class="card" id="c-ai"></div>
+        <div class="card" id="c-trend"></div>
+        <div class="card" id="c-calc"></div>
+      </div>
+    </section>
+
+    <!-- CONFIG -->
+    <section id="v-config" class="view hidden">
+      <div class="card">
+        <h2>Chaves (ficam só neste navegador)</h2>
+        <label>Twelve Data API key <a href="https://twelvedata.com/pricing" target="_blank" rel="noopener">(criar grátis)</a>
+          <input id="s-tdKey" type="password" autocomplete="off"></label>
+        <label>Google Gemini API key <a href="https://aistudio.google.com/app/apikey" target="_blank" rel="noopener">(criar grátis)</a>
+          <input id="s-geminiKey" type="password" autocomplete="off"></label>
+        <label>Modelo Gemini <input id="s-geminiModel"></label>
+      </div>
+      <div class="card">
+        <h2>Risco</h2>
+        <div class="row2">
+          <label>Tamanho da conta (USD) <input id="s-accountSize" type="number" min="0" step="100"></label>
+          <label>Risco por trade (%) <input id="s-riskPct" type="number" min="0" step="0.1"></label>
+        </div>
+      </div>
+      <div class="card">
+        <h2>Ativos</h2>
+        <p class="muted">Símbolo no Twelve Data e valor (USD) de 1 pip/ponto por lote padrão na sua corretora. Se NAS100/US30 não vierem no plano grátis, troque por QQQ / DIA.</p>
+        <div id="assets-table"></div>
+      </div>
+      <div class="toolbar">
+        <button id="btn-save" class="primary">Salvar</button>
+        <button id="btn-clear">Limpar cache</button>
+        <span id="save-status" class="muted"></span>
+      </div>
+    </section>
+  </main>
+
+  <footer>Ferramenta de estudo e apoio à decisão. <strong>Não é recomendação de investimento.</strong> Dados: Twelve Data. Gráficos: TradingView Lightweight Charts.</footer>
+
+  <script src="https://unpkg.com/lightweight-charts@4.2.0/dist/lightweight-charts.standalone.production.js"></script>
+  <script src="js/config.js"></script>
+  <script src="js/indicators.js"></script>
+  <script src="js/data.js"></script>
+  <script src="js/analysis.js"></script>
+  <script src="js/risk.js"></script>
+  <script src="js/setups.js"></script>
+  <script src="js/ai.js"></script>
+  <script src="js/chart.js"></script>
+  <script src="js/app.js"></script>
+</body>
+</html>
