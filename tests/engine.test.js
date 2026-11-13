@@ -197,3 +197,26 @@ test('cofre: criptografa e abre com usuário/senha corretos, recusa errados', as
   assert.equal(await MA.auth.decrypt(v, 'bryan', 'senha-errada'), null);
   assert.equal(await MA.auth.decrypt(v, 'outro', 'senha-forte-123!'), null);
 });
+
+// ---------------- backtest ----------------
+require('../js/backtest.js');
+test('simulação: alvo, stop, mesma vela = stop, parcial e timeout', () => {
+  const bar = (t, h, l, c) => ({ t, o: c, h, l, c });
+  const sig = { dir: 'compra', entry: 100, sl: 99, tp1: 101, tp2: 102, tp3: 103, R: 1 };
+  const sim = (bars, v) => MA.backtest.simulate([bar(0, 100, 100, 100), ...bars], 0, sig, v, 0);
+  assert.equal(sim([bar(900, 101.2, 99.5, 101)], 'tp1').r, 1);
+  assert.equal(sim([bar(900, 100.5, 98.9, 99)], 'tp1').r, -1);
+  assert.equal(sim([bar(900, 101.5, 98.5, 100)], 'tp1').r, -1);                    // ambos na mesma vela: stop
+  assert.equal(sim([bar(900, 101.1, 100, 101), bar(1800, 101, 99.9, 100)], 'parcial').r, 0.5); // TP1 e volta à entrada
+  assert.equal(sim([bar(900, 101.1, 100, 101), bar(1800, 102.2, 101, 102)], 'parcial').r, 1.5);
+  assert.equal(sim([bar(900, 100.5, 99.5, 100.3)], 'tp2').r.toFixed(2), '0.30');     // sem saída: fecha no último preço
+  const venda = { dir: 'venda', entry: 100, sl: 101, tp1: 99, tp2: 98, tp3: 97, R: 1 };
+  assert.equal(MA.backtest.simulate([bar(0, 100, 100, 100), bar(900, 100.2, 98.9, 99)], 0, venda, 'tp1', 0.1).r, 0.9); // custo do spread
+});
+
+test('estatísticas: uma posição por ativo e drawdown', () => {
+  const s = (t, r, exit) => ({ t, asset: 'X', out: { tp1: { r, exitT: exit } } });
+  const st = MA.backtest.stats([s(0, 1, 100), s(50, -1, 150), s(200, -1, 300), s(400, 2, 500)], 'tp1');
+  assert.equal(st.n, 3);               // o 2º sinal ocorreu com posição aberta e foi ignorado
+  assert.equal(st.totalR, 2); assert.equal(st.maxDD, 1); assert.equal(st.wins, 2);
+});

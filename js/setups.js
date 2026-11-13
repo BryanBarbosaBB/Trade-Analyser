@@ -186,6 +186,8 @@
       .filter((o) => o.r > 0 && o.r < 1.5)
       .sort((a, b) => a.r - b.r);
     const blocks = [];
+    // backtest (46 dias, 12 ativos): sem D1 e H4 a favor, os gatilhos tiveram resultado médio negativo
+    if (setup.align.pts < 30) blocks.push('D1 e H4 não estão os dois a favor da operação');
     if (!session.good) blocks.push('fora das sessões de Londres/Nova York (' + session.label + ')');
     if (plan.rrNext < 1) blocks.push('o próximo nível contrário está a só ' + plan.rrNext.toFixed(2) + 'R (o risco é maior que o caminho livre)');
     if (strong.length) blocks.push((setup.dir === 'venda' ? 'suporte' : 'resistência') + ' forte (' + strong[0].desc + ') a ' + strong[0].r.toFixed(2) + 'R da entrada');
@@ -213,6 +215,11 @@
       if (!data[k] || data[k].length < 60) throw new Error('Poucas velas em ' + k + ' para ' + asset.name);
       tf[k] = MA.an.analyzeTF(data[k], cfg);
     }
+    return analyzeFromTF(asset, tf, data, settings, nowSec);
+  }
+
+  /* Igual a analyzeAsset, mas recebe as análises por timeframe já prontas (o backtest reaproveita H1/H4/D1). */
+  function analyzeFromTF(asset, tf, data, settings, nowSec) {
     const ctx = { tf, price: tf.M15.price, period: MA.an.periodLevels(data.D1, nowSec), session: MA.an.sessions(nowSec) };
     const candidates = [];
     for (const dir of ['compra', 'venda']) {
@@ -248,5 +255,5 @@
     return { plan, size, invalidation: inval };
   }
 
-  MA.setups = { analyzeAsset, planForEntry, alignment, rsiTrigger, pullbackAreas };
+  MA.setups = { analyzeAsset, analyzeFromTF, planForEntry, alignment, rsiTrigger, pullbackAreas };
 })(globalThis.MA = globalThis.MA || {});

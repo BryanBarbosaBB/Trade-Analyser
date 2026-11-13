@@ -1,1 +1,6 @@
 node_modules/
+.bt-data/
+backtest-result.json
+bot/state.json
+bot/bot.log
+__pycache__/

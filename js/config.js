@@ -1,31 +1,33 @@
 /* Configuração padrão. O usuário pode sobrescrever tudo na tela Configurações (salvo no navegador).
    td = símbolo no Twelve Data; pip = tamanho de 1 pip/ponto; pipValue = USD por pip por 1 lote padrão
    (aproximado; pares JPY/CAD variam com o câmbio — ajuste conforme sua corretora).
+   spread = custo médio de entrada (diferença compra/venda) em preço, usado no backtest.
    NAS100/US30: o plano grátis do Twelve Data não tem os índices; usamos os ETFs QQQ/DIA como referência
    de tendência e estrutura. Os preços são do ETF, por isso o lote não é calculado (pipValue 0). */
 (function (MA) {
   'use strict';
 
   MA.DEFAULT_ASSETS = [
-    { name: 'XAUUSD', td: 'XAU/USD', pip: 0.1,    pipValue: 10,  digits: 2, enabled: true },
-    { name: 'NAS100', td: 'QQQ',     pip: 0.01,   pipValue: 0,   digits: 2, enabled: true, proxy: 'ETF QQQ (preço ≠ índice)' },
-    { name: 'US30',   td: 'DIA',     pip: 0.01,   pipValue: 0,   digits: 2, enabled: true, proxy: 'ETF DIA (preço ≠ índice)' },
-    { name: 'GBPJPY', td: 'GBP/JPY', pip: 0.01,   pipValue: 6.5, digits: 3, enabled: true },
-    { name: 'CADJPY', td: 'CAD/JPY', pip: 0.01,   pipValue: 6.5, digits: 3, enabled: true },
-    { name: 'AUDJPY', td: 'AUD/JPY', pip: 0.01,   pipValue: 6.5, digits: 3, enabled: true },
-    { name: 'EURJPY', td: 'EUR/JPY', pip: 0.01,   pipValue: 6.5, digits: 3, enabled: true },
-    { name: 'USDJPY', td: 'USD/JPY', pip: 0.01,   pipValue: 6.5, digits: 3, enabled: true },
-    { name: 'EURUSD', td: 'EUR/USD', pip: 0.0001, pipValue: 10,  digits: 5, enabled: true },
-    { name: 'GBPUSD', td: 'GBP/USD', pip: 0.0001, pipValue: 10,  digits: 5, enabled: true },
-    { name: 'AUDUSD', td: 'AUD/USD', pip: 0.0001, pipValue: 10,  digits: 5, enabled: true },
-    { name: 'USDCAD', td: 'USD/CAD', pip: 0.0001, pipValue: 7.3, digits: 5, enabled: true },
-    { name: 'BTCUSD', td: 'BTC/USD', pip: 1,      pipValue: 1,   digits: 1, enabled: false },
+    { name: 'XAUUSD', td: 'XAU/USD', pip: 0.1,    pipValue: 10,  digits: 2, spread: 0.35, enabled: true },
+    { name: 'NAS100', td: 'QQQ',     pip: 0.01,   pipValue: 0,   digits: 2, spread: 0.03, enabled: true, proxy: 'ETF QQQ (preço ≠ índice)' },
+    { name: 'US30',   td: 'DIA',     pip: 0.01,   pipValue: 0,   digits: 2, spread: 0.03, enabled: true, proxy: 'ETF DIA (preço ≠ índice)' },
+    { name: 'GBPJPY', td: 'GBP/JPY', pip: 0.01,   pipValue: 6.5, digits: 3, spread: 0.025, enabled: true },
+    { name: 'CADJPY', td: 'CAD/JPY', pip: 0.01,   pipValue: 6.5, digits: 3, spread: 0.025, enabled: true },
+    { name: 'AUDJPY', td: 'AUD/JPY', pip: 0.01,   pipValue: 6.5, digits: 3, spread: 0.02, enabled: true },
+    { name: 'EURJPY', td: 'EUR/JPY', pip: 0.01,   pipValue: 6.5, digits: 3, spread: 0.02, enabled: true },
+    { name: 'USDJPY', td: 'USD/JPY', pip: 0.01,   pipValue: 6.5, digits: 3, spread: 0.015, enabled: true },
+    { name: 'EURUSD', td: 'EUR/USD', pip: 0.0001, pipValue: 10,  digits: 5, spread: 0.00012, enabled: true },
+    { name: 'GBPUSD', td: 'GBP/USD', pip: 0.0001, pipValue: 10,  digits: 5, spread: 0.00015, enabled: true },
+    { name: 'AUDUSD', td: 'AUD/USD', pip: 0.0001, pipValue: 10,  digits: 5, spread: 0.00014, enabled: true },
+    { name: 'USDCAD', td: 'USD/CAD', pip: 0.0001, pipValue: 7.3, digits: 5, spread: 0.0002, enabled: true },
+    { name: 'BTCUSD', td: 'BTC/USD', pip: 1,      pipValue: 1,   digits: 1, spread: 30, enabled: false },
   ];
 
   MA.DEFAULT_SETTINGS = {
     tdKey: '',
     geminiKey: '',
     geminiModel: 'gemini-flash-latest',
+    ntfyTopic: '',
     accountSize: 10000,
     riskPct: 1,
     risk: { slBufferAtr: 0.2, slMinAtr: 0.8, slMaxAtr: 2.5, tp2MinRR: 1.5, tp3RR: 3 },

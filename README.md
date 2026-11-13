@@ -60,6 +60,22 @@ e abra http://127.0.0.1:8765
 3. **Settings → Pages → Branch: main / (root) → Save**.
 4. Em cerca de 1 minuto o site fica em `https://SEU-USUARIO.github.io/analisador/`. Abra no celular e configure as chaves; cada navegador guarda as suas.
 
+## Backtest
+```
+set TD_KEY=sua_chave_twelve_data
+node scripts/backtest.js            (todos os ativos; ou: node scripts/backtest.js XAUUSD EURJPY)
+```
+O script reproduz o motor vela a vela, sem olhar o futuro. Para cada gatilho ele simula 5 saídas (0,5R, TP1, TP2, TP3 e parcial), desconta o spread e permite uma posição por ativo. Depois escolhe o melhor filtro nos primeiros 70% do período e mede nos 30% finais, que a escolha nunca viu.
+
+Resultado de 13/11/2026 (forex e ouro: cerca de 46 dias; QQQ/DIA: cerca de 9 meses; 12 ativos):
+| Regra | Trades | Acerto | Média | Total | Pior queda |
+|---|---|---|---|---|---|
+| Todos os gatilhos, sem filtro (saída parcial) | 1518 | 49% | −0,13R | −198R | 210R |
+| Alvo curto de 0,5R (gatilhos sem filtro) | 2169 | 63% | −0,17R | −367R | 375R |
+| **ENTRADA + D1/H4 alinhados, saída TP3 (regra atual)** | 26 | 38% | **+0,35R** | +9,1R | 5,6R |
+
+Leitura: os gatilhos sozinhos perdem dinheiro; só os filtros tornam o resultado positivo. Acertar mais (alvo curto) dá prejuízo; o lucro veio de **deixar os ganhos correrem** (TP3). A amostra ainda é pequena, então a demo é a prova real.
+
 ## Testes
 ```
 node --test tests/engine.test.js        # 19 testes do motor (indicadores, níveis, zonas, setups, SL/TP, lote)

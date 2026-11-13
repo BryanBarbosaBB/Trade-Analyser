@@ -1,0 +1,33 @@
+{
+  "modo": "alerta",
+  "permitir_conta_real": false,
+  "ntfy_topico": "",
+  "ntfy_servidor": "https://ntfy.sh",
+  "risco_por_trade_pct": 1.0,
+  "max_posicoes": 3,
+  "perda_maxima_dia_pct": 3,
+  "ativos": [
+    "XAUUSD",
+    "NAS100",
+    "US30",
+    "GBPJPY",
+    "CADJPY",
+    "AUDJPY",
+    "EURJPY",
+    "USDJPY",
+    "EURUSD",
+    "GBPUSD",
+    "AUDUSD",
+    "USDCAD"
+  ],
+  "simbolos": {},
+  "filtro": {
+    "exigir_status_entrada": true,
+    "score_minimo": 75,
+    "so_londres_ny": true,
+    "caminho_livre_minimo_R": 1.0,
+    "alinhamento_minimo": 30,
+    "setups": [],
+    "saida": "tp3"
+  }
+}

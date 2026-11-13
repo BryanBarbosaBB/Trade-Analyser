@@ -70,6 +70,12 @@
         <label>Modelo Gemini <input id="s-geminiModel"></label>
       </div>
       <div class="card">
+        <h2>Alerta no celular (ntfy)</h2>
+        <p class="muted">Instale o app <b>ntfy</b> (Android/iPhone), toque em <b>+</b> e assine o mesmo tópico abaixo. Use um nome difícil de adivinhar: quem souber o tópico também recebe os alertas.</p>
+        <label>Tópico <input id="s-ntfyTopic" placeholder="ex.: bryan-trade-8k2p" autocomplete="off"></label>
+        <button id="btn-ntfy-test" type="button">Enviar notificação de teste</button> <span id="ntfy-status" class="muted"></span>
+      </div>
+      <div class="card">
         <h2>Risco</h2>
         <div class="row2">
           <label>Tamanho da conta (USD) <input id="s-accountSize" type="number" min="0" step="100"></label>

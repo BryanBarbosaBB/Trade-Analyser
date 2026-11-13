@@ -39,6 +39,27 @@
 
   function setStatus(t) { $('scan-status').textContent = t; }
 
+  // ---------------- alertas (ntfy) ----------------
+  async function sendNtfy(title, message, priority = 4) {
+    const topic = (state.settings.ntfyTopic || '').trim();
+    if (!topic) return false;
+    const res = await fetch('https://ntfy.sh/', { method: 'POST', body: JSON.stringify({ topic, title, message, priority, tags: ['chart_with_upwards_trend'] }) });
+    return res.ok;
+  }
+
+  /* Avisa cada ENTRADA uma única vez (por ativo, setup, direção e vela). */
+  function alertIfEntry(r) {
+    const b = r && r.best;
+    if (!b || b.status !== 'ENTRADA' || !state.settings.ntfyTopic) return;
+    const key = 'ma.alert.' + r.asset + '.' + b.name + '.' + b.dir + '.' + r.updated;
+    try { if (localStorage.getItem(key)) return; localStorage.setItem(key, '1'); } catch (e) { /* sem storage: avisa mesmo assim */ }
+    const d = r.digits, p = b.plan;
+    sendNtfy('ENTRADA ' + b.dir.toUpperCase() + ' ' + r.asset + ' (score ' + b.score + ')',
+      [b.dir.toUpperCase() + ' ' + r.asset + ' @ ' + fmt(p.entry, d),
+        'SL ' + fmt(p.sl, d) + ' | TP1 ' + fmt(p.tp1, d) + ' | TP2 ' + fmt(p.tp2, d),
+        b.name, location.href.split('#')[0]].join('\n'), 5).catch(() => {});
+  }
+
   async function scanAll() {
     if (state.busy) return;
     if (!state.settings.tdKey) { show('config'); $('save-status').textContent = 'Informe a chave do Twelve Data primeiro.'; return; }
@@ -47,6 +68,7 @@
     for (let i = 0; i < list.length; i++) {
       setStatus('Analisando ' + list[i].name + ' (' + (i + 1) + '/' + list.length + ')…');
       await analyze(list[i]);
+      alertIfEntry(state.results[list[i].name]);
       renderList();
     }
     const n = Object.keys(state.errors).length;
@@ -135,7 +157,8 @@
         '<tr><td class="down">SL</td><td>' + fmt(p.sl, d) + '</td><td class="num">' + pips(p.sl) + '</td><td class="num">−1</td></tr>' +
         '<tr><td class="up">TP1</td><td>' + fmt(p.tp1, d) + '</td><td class="num">' + pips(p.tp1) + '</td><td class="num">1.0</td></tr>' +
         '<tr><td class="up">TP2</td><td>' + fmt(p.tp2, d) + '</td><td class="num">' + pips(p.tp2) + '</td><td class="num">' + fmt(p.rr.tp2, 2) + '</td></tr>' +
-        '<tr><td class="up">TP3</td><td>' + fmt(p.tp3, d) + '</td><td class="num">' + pips(p.tp3) + '</td><td class="num">' + fmt(p.rr.tp3, 2) + '</td></tr></table>' +
+        '<tr><td class="up">TP3 ★</td><td>' + fmt(p.tp3, d) + '</td><td class="num">' + pips(p.tp3) + '</td><td class="num">' + fmt(p.rr.tp3, 2) + '</td></tr></table>' +
+        '<p class="muted">★ Saída sugerida pelo backtest: <b>TP3</b> com o stop original (deixar o lucro correr). TP1/TP2 são só referência.</p>' +
         (asset.proxy
           ? '<p class="muted"><b>Lote:</b> não calculado — dados do ' + esc(asset.proxy) + '. Use os níveis como referência de estrutura.</p>'
           : '<p><b>Lote:</b> ' + fmt(b.size.lots, 2) + ' (risco US$ ' + fmt(b.size.riskUsd, 0) + ' = ' + state.settings.riskPct + '% de US$ ' + state.settings.accountSize + ')</p>') +
@@ -207,7 +230,7 @@
   // ---------------- configurações ----------------
   function renderConfig() {
     const s = state.settings;
-    for (const k of ['tdKey', 'geminiKey', 'geminiModel', 'accountSize', 'riskPct']) $('s-' + k).value = s[k];
+    for (const k of ['tdKey', 'geminiKey', 'geminiModel', 'ntfyTopic', 'accountSize', 'riskPct']) $('s-' + k).value = s[k] == null ? '' : s[k];
     $('assets-table').innerHTML = '<div class="assets-grid"><span></span><span class="muted">Ativo</span><span class="muted">Símbolo Twelve Data</span><span class="muted">USD/pip/lote</span>' +
       s.assets.map((a, i) => '<input type="checkbox" data-i="' + i + '" data-k="enabled"' + (a.enabled ? ' checked' : '') + '><span>' + a.name + '</span>' +
         '<input data-i="' + i + '" data-k="td" value="' + esc(a.td) + '"><input data-i="' + i + '" data-k="pipValue" type="number" step="any" value="' + a.pipValue + '">').join('') + '</div>';
@@ -217,6 +240,7 @@
     const s = state.settings;
     s.tdKey = $('s-tdKey').value.trim(); s.geminiKey = $('s-geminiKey').value.trim();
     s.geminiModel = $('s-geminiModel').value.trim() || MA.DEFAULT_SETTINGS.geminiModel;
+    s.ntfyTopic = $('s-ntfyTopic').value.trim();
     s.accountSize = +$('s-accountSize').value || 0; s.riskPct = +$('s-riskPct').value || 0;
     document.querySelectorAll('#assets-table [data-i]').forEach((el) => {
       const a = s.assets[+el.dataset.i], k = el.dataset.k;
@@ -303,6 +327,13 @@
       } else if (e.target.id === 'btn-calc-clear') { state.userPlan = null; renderDetail(); }
     });
     $('btn-save').addEventListener('click', saveConfig);
+    $('btn-ntfy-test').addEventListener('click', async () => {
+      state.settings.ntfyTopic = $('s-ntfyTopic').value.trim();
+      if (!state.settings.ntfyTopic) { $('ntfy-status').textContent = 'Informe o tópico.'; return; }
+      $('ntfy-status').textContent = 'Enviando…';
+      try { $('ntfy-status').textContent = (await sendNtfy('Teste do Analisador', 'Se você recebeu isto, os alertas estão funcionando.', 3)) ? 'Enviado. Confira o celular.' : 'Falhou.'; }
+      catch (e) { $('ntfy-status').textContent = 'Falhou: ' + e.message; }
+    });
     $('btn-clear').addEventListener('click', () => { MA.data.clearCache(); state.results = {}; state.ai = {}; renderList(); $('save-status').textContent = 'Cache limpo.'; });
   }
 
