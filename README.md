@@ -76,6 +76,18 @@ Resultado de 13/11/2026 (forex e ouro: cerca de 46 dias; QQQ/DIA: cerca de 9 mes
 
 Leitura: os gatilhos sozinhos perdem dinheiro; só os filtros tornam o resultado positivo. Acertar mais (alvo curto) dá prejuízo; o lucro veio de **deixar os ganhos correrem** (TP3). A amostra ainda é pequena, então a demo é a prova real.
 
+### Backtest com 3,5 anos do MT5 (13/11/2026)
+Para rodar: `python scripts/export_mt5.py 3` e depois `node scripts/backtest.js --mt5`. Os dados vêm da demo MetaQuotes, com horário de verão tratado e spread conservador.
+
+| Regra | Trades | Acerto | Média | Total | Pior queda |
+|---|---|---|---|---|---|
+| Todos os gatilhos, sem filtro (TP3) | 19.351 | 28% | −0,08R | −1.500R | 1.558R |
+| Alvo curto 0,5R (sem filtro) | 42.217 | 66% | −0,10R | −4.358R | 4.369R |
+| Regra atual (ENTRADA), 12 ativos, TP3 | 565 | 30% | −0,01R | −4,9R | 46,5R |
+| Regra atual só em XAUUSD, NAS100, US30, EURJPY, EURUSD: **teste 2025-26** (ativos escolhidos só com 2023-24) | 150 | 32% | **+0,16R** | +24,4R | 20,4R |
+
+Leitura: no período longo, a regra nos 12 ativos fica no zero a zero. O resultado positivo dos 46 dias foi do momento. Escolhendo os ativos com dados antigos e testando no período novo sobra uma vantagem pequena (+0,16R), que ainda pode ser sorte estatística, com quedas de até 20R. O robô opera só esses 5 ativos.
+
 ## Testes
 ```
 node --test tests/engine.test.js        # 19 testes do motor (indicadores, níveis, zonas, setups, SL/TP, lote)
