@@ -4,3 +4,5 @@ backtest-result.json
 bot/state.json
 bot/bot.log
 __pycache__/
+.bt-data-mt5/
+backtest-result-mt5.json

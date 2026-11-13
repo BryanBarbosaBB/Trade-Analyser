@@ -6,13 +6,15 @@ const path = require('path');
 globalThis.localStorage = { getItem: () => null, setItem: () => {} };
 for (const f of ['config', 'indicators', 'data', 'analysis', 'risk', 'setups', 'backtest']) require('../js/' + f + '.js');
 const MA = globalThis.MA;
-const DIR = path.join(__dirname, '..', '.bt-data');
+const MT5 = process.argv.includes('--mt5');
+const DIR = path.join(__dirname, '..', MT5 ? '.bt-data-mt5' : '.bt-data');
 const pct = (x) => (100 * x).toFixed(0) + '%';
 const fx = (x, d = 2) => (x >= 0 ? '+' : '') + x.toFixed(d);
 
 async function load(asset, s) {
   fs.mkdirSync(DIR, { recursive: true });
   const file = path.join(DIR, asset.name + '.json');
+  if (MT5) { if (!fs.existsSync(file)) throw new Error('rode antes: python scripts/export_mt5.py'); return JSON.parse(fs.readFileSync(file, 'utf8')); }
   if (fs.existsSync(file) && Date.now() - fs.statSync(file).mtimeMs < 12 * 3600e3) return JSON.parse(fs.readFileSync(file, 'utf8'));
   const d = await MA.data.getAll(asset, s, (w) => process.stdout.write('  limite da API, aguardando ' + w + 's   \r'), true);
   const out = { M15: d.M15, H1: d.H1, D1: d.D1 };
@@ -27,7 +29,7 @@ const line = (name, st) => console.log('  ' + name.padEnd(30) + String(st.n).pad
   const s = structuredClone(MA.DEFAULT_SETTINGS);
   s.tdKey = process.env.TD_KEY;
   s.candles = { M15: 5000, H1: 5000, D1: 1000 };
-  const names = process.argv.slice(2);
+  const names = process.argv.slice(2).filter((x) => !x.startsWith('--'));
   const assets = MA.DEFAULT_ASSETS.filter((a) => (names.length ? names.includes(a.name) : a.enabled));
   const all = [];
   for (const a of assets) {
@@ -35,12 +37,14 @@ const line = (name, st) => console.log('  ' + name.padEnd(30) + String(st.n).pad
     let full;
     try { full = await load(a, s); } catch (e) { console.log(a.name + ': ERRO ' + e.message); continue; }
     const t0 = Date.now();
-    const sigs = MA.backtest.run(a, full, s, (p) => process.stdout.write(a.name + ': ' + pct(p) + '      \r'));
+    // spread: o maior entre o registrado pela corretora e a estimativa conservadora do config (demo costuma registrar 0)
+    const asset = full.spread != null ? Object.assign({}, a, { spread: Math.max(full.spread, a.spread || 0) }) : a;
+    const sigs = MA.backtest.run(asset, full, s, (p) => process.stdout.write(a.name + ': ' + pct(p) + '      \r'));
     const from = new Date(full.M15[0].t * 1000).toISOString().slice(0, 10), to = new Date(full.M15.at(-1).t * 1000).toISOString().slice(0, 10);
     console.log(a.name + ' (' + from + ' a ' + to + ', ' + ((Date.now() - t0) / 1000).toFixed(0) + 's): ' + sigs.length + ' gatilhos');
     all.push(...sigs);
   }
-  fs.writeFileSync(path.join(__dirname, '..', 'backtest-result.json'), JSON.stringify(all));
+  fs.writeFileSync(path.join(__dirname, '..', MT5 ? 'backtest-result-mt5.json' : 'backtest-result.json'), JSON.stringify(all));
 
   console.log('\n=== TODOS OS ATIVOS — regra atual (status ENTRADA) ===');
   for (const v of MA.backtest.VARIANTS) line('saída ' + v, MA.backtest.stats(all, v, (x) => x.status === 'ENTRADA'));
@@ -50,6 +54,16 @@ const line = (name, st) => console.log('  ' + name.padEnd(30) + String(st.n).pad
   for (const a of assets) line(a.name, MA.backtest.stats(all.filter((x) => x.asset === a.name), 'parcial'));
   console.log('\n=== POR SETUP — saída parcial ===');
   for (const st of ['Pullback na tendência', 'Rompimento com reteste']) line(st, MA.backtest.stats(all.filter((x) => x.setup === st), 'parcial'));
+
+  const rule = (x) => x.status === 'ENTRADA';
+  console.log('\n=== REGRA ATUAL (ENTRADA = D1/H4 a favor + travas), POR ANO ===');
+  const years = [...new Set(all.map((x) => new Date(x.t * 1000).getUTCFullYear()))].sort();
+  for (const v of ['tp3', 'tp2', 'parcial', 'tp1']) {
+    line('total, saída ' + v, MA.backtest.stats(all, v, rule));
+    for (const y of years) line('  ' + y, MA.backtest.stats(all, v, (x) => rule(x) && new Date(x.t * 1000).getUTCFullYear() === y));
+  }
+  console.log('\n=== REGRA ATUAL, POR ATIVO (saída tp3) ===');
+  for (const a of assets) line(a.name, MA.backtest.stats(all.filter((x) => x.asset === a.name), 'tp3', rule));
 
   const opt = MA.backtest.optimize(all);
   console.log('\n=== OTIMIZAÇÃO: escolhe no TREINO (70% inicial), mede no TESTE (30% final, nunca visto) ===');
