@@ -142,14 +142,14 @@
     try { return (await navigator.permissions.query({ name: 'local-network-access' })).state; } catch (e) { return 'unknown'; }
   }
 
-  /* Liga a ponte no início da varredura. Se o Chrome ainda vai perguntar, espera até 30 s
+  /* Liga a ponte no início da varredura. Se o Chrome ainda vai perguntar, espera até 15 s
      para a pessoa clicar em "Permitir". Negada: nem tenta (evita atraso). */
   async function connectFeed(onAsk) {
     feedDownUntil = 0;
     const perm = await feedPermission();
     if (perm === 'denied') return { on: false, perm };
     if (perm === 'prompt' && onAsk) onAsk();
-    const on = !!(await fromFeed({ name: 'EURUSD' }, perm === 'prompt' ? 30000 : 4000));
+    const on = !!(await fromFeed({ name: 'EURUSD' }, perm === 'prompt' ? 15000 : 4000));
     return { on, perm: on ? 'granted' : await feedPermission() };
   }
 

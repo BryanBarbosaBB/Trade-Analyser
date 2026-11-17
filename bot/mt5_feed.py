@@ -11,15 +11,19 @@ O robô (mt5_bot.py) inicia esta ponte automaticamente. Para rodar sozinha:  pyt
 from __future__ import annotations
 
 import json
+import mimetypes
 import time
 from http.server import BaseHTTPRequestHandler, HTTPServer
-from urllib.parse import parse_qs, urlparse
+from pathlib import Path
+from urllib.parse import parse_qs, unquote, urlparse
 
 import MetaTrader5 as mt5
 
 from mt5_bot import TF, candles, resolve, server_offset
 
 HOST, PORT = "127.0.0.1", 8765
+SITE = Path(__file__).resolve().parent.parent  # pasta do site (index.html, css/, js/)
+SITE_DIRS = ("css", "js")
 _offset = {"v": None, "t": 0.0}
 
 
@@ -49,8 +53,29 @@ class Handler(BaseHTTPRequestHandler):
         self.send_header("Access-Control-Allow-Private-Network", "true")
         self.end_headers()
 
+    def _static(self, path: str) -> bool:
+        """Serve o próprio site (index.html, css/, js/). Aberto em http://127.0.0.1:8765 o site fala com a
+        ponte sem precisar da permissão de "rede local" do Chrome."""
+        rel = unquote(path).lstrip("/") or "index.html"
+        parts = rel.split("/")
+        if not (rel == "index.html" or (len(parts) == 2 and parts[0] in SITE_DIRS)) or ".." in parts:
+            return False
+        f = SITE / rel
+        if not f.is_file():
+            return False
+        raw = f.read_bytes()
+        self.send_response(200)
+        self.send_header("Content-Type", (mimetypes.guess_type(f.name)[0] or "application/octet-stream") + "; charset=utf-8")
+        self.send_header("Cache-Control", "no-store")
+        self.send_header("Content-Length", str(len(raw)))
+        self.end_headers()
+        self.wfile.write(raw)
+        return True
+
     def do_GET(self):
         u = urlparse(self.path)
+        if u.path != "/candles" and u.path != "/ping" and self._static(u.path):
+            return
         if u.path == "/ping":
             return self._send(200, {"ok": True})
         if u.path != "/candles":
@@ -79,7 +104,7 @@ def main() -> None:
         srv = HTTPServer((HOST, PORT), Handler)
     except OSError:
         raise SystemExit(f"Ponte já está rodando em {HOST}:{PORT}")
-    print(f"Ponte de preços MT5 em http://{HOST}:{PORT}")
+    print(f"Ponte de preços MT5 em http://{HOST}:{PORT}  (abra este endereço no navegador para o site rápido)")
     srv.serve_forever()
 
 

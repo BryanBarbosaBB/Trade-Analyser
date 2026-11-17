@@ -65,15 +65,15 @@
     if (state.busy) return;
     state.busy = true; $('btn-scan').disabled = true;
     setStatus('Conectando ao MT5…');
-    const feed = await MA.data.connectFeed(() => setStatus('O Chrome vai pedir "acesso à rede local": clique em Permitir para usar os preços do MT5 (aguardando até 30 s)…'));
+    const feed = await MA.data.connectFeed(() => setStatus('O Chrome vai pedir "acesso à rede local": clique em Permitir (aguardando 15 s). Ou abra http://127.0.0.1:8765, que não precisa disso.'));
     const feedOn = feed.on;
     if (!feedOn && !state.settings.tdKey) {
       state.busy = false; $('btn-scan').disabled = false;
       show('config'); $('save-status').textContent = 'Ligue o robô (python bot\\mt5_bot.py) ou informe a chave do Twelve Data.'; return;
     }
     const prefix = feedOn ? 'MT5 · ' : feed.perm === 'denied'
-      ? 'Rede local bloqueada no Chrome (libere no cadeado ao lado do endereço) — Twelve Data, lenta · '
-      : 'MT5 não respondeu — Twelve Data, lenta · ';
+      ? 'Rede local bloqueada no Chrome — Twelve Data, lenta (rápido: abra http://127.0.0.1:8765) · '
+      : 'MT5 não respondeu — Twelve Data, lenta (rápido: robô ligado + http://127.0.0.1:8765) · ';
     const list = enabled();
     for (let i = 0; i < list.length; i++) {
       setStatus(prefix + 'Analisando ' + list[i].name + ' (' + (i + 1) + '/' + list.length + ')…');
