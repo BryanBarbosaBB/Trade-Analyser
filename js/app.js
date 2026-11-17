@@ -63,12 +63,20 @@
 
   async function scanAll() {
     if (state.busy) return;
-    const feedOn = !!(await MA.data.fromFeed({ name: 'EURUSD' }));
-    if (!feedOn && !state.settings.tdKey) { show('config'); $('save-status').textContent = 'Ligue o robô (python bot\mt5_bot.py) ou informe a chave do Twelve Data.'; return; }
     state.busy = true; $('btn-scan').disabled = true;
+    setStatus('Conectando ao MT5…');
+    const feed = await MA.data.connectFeed(() => setStatus('O Chrome vai pedir "acesso à rede local": clique em Permitir para usar os preços do MT5 (aguardando até 30 s)…'));
+    const feedOn = feed.on;
+    if (!feedOn && !state.settings.tdKey) {
+      state.busy = false; $('btn-scan').disabled = false;
+      show('config'); $('save-status').textContent = 'Ligue o robô (python bot\\mt5_bot.py) ou informe a chave do Twelve Data.'; return;
+    }
+    const prefix = feedOn ? 'MT5 · ' : feed.perm === 'denied'
+      ? 'Rede local bloqueada no Chrome (libere no cadeado ao lado do endereço) — Twelve Data, lenta · '
+      : 'MT5 não respondeu — Twelve Data, lenta · ';
     const list = enabled();
     for (let i = 0; i < list.length; i++) {
-      setStatus((feedOn ? 'MT5 · ' : '') + 'Analisando ' + list[i].name + ' (' + (i + 1) + '/' + list.length + ')…');
+      setStatus(prefix + 'Analisando ' + list[i].name + ' (' + (i + 1) + '/' + list.length + ')…');
       await analyze(list[i]);
       alertIfEntry(state.results[list[i].name]);
       renderList();
