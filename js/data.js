@@ -118,8 +118,34 @@
     return candles;
   }
 
-  /* Busca M15, H1, D1 e monta H4 a partir do H1. 3 requisições por ativo (ou 0, se em cache). */
+  /* Ponte local do robô (bot/mt5_feed.py): velas direto do MT5, sem limite por minuto.
+     Se não responder, desliga por 60 s e o site usa a Twelve Data. */
+  const FEED = 'http://127.0.0.1:8765';
+  let feedDownUntil = 0;
+  async function fromFeed(asset) {
+    if (Date.now() < feedDownUntil) return null;
+    const ctrl = new AbortController(), timer = setTimeout(() => ctrl.abort(), 2500);
+    try {
+      const res = await fetch(FEED + '/candles?asset=' + encodeURIComponent(asset.name), { signal: ctrl.signal, cache: 'no-store' });
+      const json = await res.json();
+      if (!json.ok) return null; // ativo que a corretora não tem: tenta a Twelve Data
+      return json.data;
+    } catch (e) {
+      feedDownUntil = Date.now() + 60000;
+      return null;
+    } finally { clearTimeout(timer); }
+  }
+
+  /* Busca M15, H1, D1 e monta H4 a partir do H1. Primeiro tenta o MT5 (ponte local);
+     senão, Twelve Data: 3 requisições por ativo (ou 0, se em cache). */
   async function getAll(asset, settings, onWait, force, cacheOnly) {
+    if (!cacheOnly) {
+      const f = await fromFeed(asset);
+      if (f) {
+        const H4 = resample(f.H1, TF_SEC.H4, TF_SEC.H1);
+        return { M15: f.M15, H1: f.H1, H4, D1: f.D1, source: 'MT5' };
+      }
+    }
     const key = settings.tdKey;
     const sz = settings.candles;
     const o = (size) => ({ key, size, onWait, force, cacheOnly });
@@ -127,8 +153,8 @@
     const H1 = await fetchSeries(asset.td, 'H1', o(sz.H1));
     const D1 = await fetchSeries(asset.td, 'D1', o(sz.D1));
     const H4 = resample(H1, TF_SEC.H4, TF_SEC.H1);
-    return { M15, H1, H4, D1 };
+    return { M15, H1, H4, D1, source: 'Twelve Data' };
   }
 
-  MA.data = { parse, resample, isFresh, getAll, clearCache, TF_SEC };
+  MA.data = { parse, resample, isFresh, getAll, fromFeed, clearCache, TF_SEC };
 })(globalThis.MA = globalThis.MA || {});

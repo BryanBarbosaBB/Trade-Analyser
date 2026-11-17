@@ -31,6 +31,7 @@
     try {
       const data = await MA.data.getAll(asset, state.settings, (s) => setStatus('Limite grátis da API (8/min): aguardando ' + s + 's…'), force, cacheOnly);
       state.results[asset.name] = MA.setups.analyzeAsset(asset, data, state.settings);
+      state.results[asset.name].source = data.source;
       delete state.errors[asset.name];
     } catch (e) {
       if (!cacheOnly) state.errors[asset.name] = e.message;
@@ -62,11 +63,12 @@
 
   async function scanAll() {
     if (state.busy) return;
-    if (!state.settings.tdKey) { show('config'); $('save-status').textContent = 'Informe a chave do Twelve Data primeiro.'; return; }
+    const feedOn = !!(await MA.data.fromFeed({ name: 'EURUSD' }));
+    if (!feedOn && !state.settings.tdKey) { show('config'); $('save-status').textContent = 'Ligue o robô (python bot\mt5_bot.py) ou informe a chave do Twelve Data.'; return; }
     state.busy = true; $('btn-scan').disabled = true;
     const list = enabled();
     for (let i = 0; i < list.length; i++) {
-      setStatus('Analisando ' + list[i].name + ' (' + (i + 1) + '/' + list.length + ')…');
+      setStatus((feedOn ? 'MT5 · ' : '') + 'Analisando ' + list[i].name + ' (' + (i + 1) + '/' + list.length + ')…');
       await analyze(list[i]);
       alertIfEntry(state.results[list[i].name]);
       renderList();
@@ -90,7 +92,7 @@
       const setup = b ? esc(b.name) + ' — <b class="' + (b.dir === 'compra' ? 'up' : 'down') + '">' + b.dir + '</b><small>' +
         (b.triggered ? 'Gatilho confirmado' : 'Área a ' + fmt(b.area.distAtr, 1) + ' ATR(H1)') + '</small>' : '<span class="muted">Nenhum setup</span>';
       return '<div class="row" data-asset="' + a.name + '">' +
-        '<div class="c-name"><div class="name">' + a.name + '</div><div class="price">' + fmt(r.price, r.digits) + (a.proxy ? ' · ' + esc(a.td) : '') + '</div></div>' +
+        '<div class="c-name"><div class="name">' + a.name + '</div><div class="price">' + fmt(r.price, r.digits) + (r.source === 'MT5' ? ' · MT5' : a.proxy ? ' · ' + esc(a.td) : '') + '</div></div>' +
         '<div class="c-arrows arrows">' + ['D1', 'H4', 'H1', 'M15'].map((k) => arrow(r.bias[k].dir)).join('') + '</div>' +
         '<div class="c-setup setup-txt">' + setup + (e ? '<small class="err">' + esc(e) + '</small>' : '') + '</div>' +
         '<div class="c-score score">' + r.score + '<span class="bar"><i style="width:' + r.score + '%"></i></span></div>' +
@@ -160,7 +162,7 @@
         '<tr><td class="up">TP3 ★</td><td>' + fmt(p.tp3, d) + '</td><td class="num">' + pips(p.tp3) + '</td><td class="num">' + fmt(p.rr.tp3, 2) + '</td></tr></table>' +
         '<p class="muted">★ Saída sugerida pelo backtest: <b>TP3</b> com o stop original (deixar o lucro correr). TP1/TP2 são só referência.</p>' +
         (asset.proxy
-          ? '<p class="muted"><b>Lote:</b> não calculado — dados do ' + esc(asset.proxy) + '. Use os níveis como referência de estrutura.</p>'
+          ? '<p class="muted"><b>Lote:</b> não calculado — dados do ' + esc(r.source === 'MT5' ? 'índice no MT5 (use o lote mínimo da corretora)' : asset.proxy) + '. Use os níveis como referência de estrutura.</p>'
           : '<p><b>Lote:</b> ' + fmt(b.size.lots, 2) + ' (risco US$ ' + fmt(b.size.riskUsd, 0) + ' = ' + state.settings.riskPct + '% de US$ ' + state.settings.accountSize + ')</p>') +
         '<h3>Score ' + b.score + '/100</h3><div class="kv">' + Object.entries(b.breakdown).map(([k, v]) => '<span>' + (LABELS[k] || k) + '</span><span>' + v + ' / ' + MAXP[k] + '</span>').join('') + '</div>' +
         '<h3>Confirmações</h3><ul class="tight">' + b.confirmations.map((x) => '<li>' + esc(x) + '</li>').join('') + '</ul>' +
