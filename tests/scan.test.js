@@ -115,3 +115,29 @@ test('varredura: erro de um ativo usa as velas anteriores e não derruba os outr
   assert.match(out.errors.XAUUSD, /falhou/);
   assert.equal(out.assets.length, MA.DEFAULT_ASSETS.filter((a) => a.enabled).length);
 });
+
+test('ETFs só gastam consulta no pregão americano', () => {
+  const { marketOpen } = require('../scripts/scan.js');
+  const qqq = MA.DEFAULT_ASSETS.find((a) => a.name === 'NAS100'), eur = MA.DEFAULT_ASSETS.find((a) => a.name === 'EURUSD');
+  const at = (h, m = 0) => Date.UTC(2026, 10, 18, h, m) / 1000; // quarta
+  assert.equal(marketOpen(qqq, at(3)), false);
+  assert.equal(marketOpen(qqq, at(15)), true);
+  assert.equal(marketOpen(eur, at(3)), true);
+});
+
+test('orçamento: um dia inteiro no agendamento do workflow cabe nas 800 consultas da Twelve Data', async () => {
+  const dir = tmp(), log = { td: [], ntfy: [] };
+  const day = Date.UTC(2026, 10, 18) / 1000; // quarta 00:00 UTC
+  // véspera às 23:00 (última rodada da noite anterior) para começar com velas salvas
+  const runs = [day - 3600];
+  for (let h = 0; h < 24; h++) {
+    if (h <= 6 || h >= 21) runs.push(day + h * 3600);                // Ásia: de hora em hora
+    else { runs.push(day + h * 3600); runs.push(day + h * 3600 + 1800); } // Londres/NY: 30 em 30 min
+  }
+  let total = 0;
+  for (const [i, now] of runs.entries()) {
+    const o = await runScan({ dir, key: 'k', topic: '', fetchFn: fakeFetch(log, now), now, throttle: noThrottle, log: quiet });
+    if (i > 0) total += o.requests;
+  }
+  console.log('consultas no dia:', total); assert.ok(total < 720, 'consultas no dia: ' + total);
+});

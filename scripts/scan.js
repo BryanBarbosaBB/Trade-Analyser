@@ -1,4 +1,4 @@
-/* Varredura automática (GitHub Actions, a cada 30 min no horário de Londres/NY).
+/* Varredura automática (GitHub Actions: a cada 30 min em Londres/NY e de hora em hora na sessão da Ásia).
    Uso: TD_KEY=... NTFY_TOPIC=... node scripts/scan.js <pasta-de-dados>
 
    A pasta de dados é o ramo `dados` do repositório. O script lê o que já estava lá, busca na Twelve Data
@@ -30,6 +30,14 @@ const unpack = (a) => (a || []).map(([t, o, h, l, c]) => ({ t, o, h, l, c }));
 function needsFetch(candles, tf, now) {
   if (!candles || !candles.length) return true;
   return now >= candles[candles.length - 1].t + 2 * TF_SEC[tf];
+}
+
+/* ETFs (QQQ/DIA) só têm velas no pregão americano (13:30–21:00 UTC, cobrindo o horário de verão):
+   fora dele não gasta consulta. */
+function marketOpen(asset, now) {
+  if (!asset.proxy) return true;
+  const d = new Date(now * 1000), dow = d.getUTCDay(), m = d.getUTCHours() * 60 + d.getUTCMinutes();
+  return dow >= 1 && dow <= 5 && m >= 13 * 60 + 30 && m <= 21 * 60 + 15;
 }
 
 function makeThrottle(perMin = PER_MIN) {
@@ -102,7 +110,7 @@ async function runScan({ dir, key, topic, fetchFn = fetch, now = Math.floor(Date
     try {
       for (const tf of ['M15', 'H1', 'D1']) {
         let c = unpack(stored[tf]);
-        if (needsFetch(c, tf, now)) {
+        if (needsFetch(c, tf, now) && (marketOpen(asset, now) || !c.length)) {
           try {
             c = await fetchTD(fetchFn, throttle, key, asset.td, tf, settings.candles[tf], now);
             out.requests++;
@@ -149,7 +157,7 @@ async function runScan({ dir, key, topic, fetchFn = fetch, now = Math.floor(Date
   return out;
 }
 
-module.exports = { runScan, needsFetch, summarize };
+module.exports = { runScan, needsFetch, marketOpen, summarize };
 
 if (require.main === module) {
   const dir = process.argv[2] || 'dados';

@@ -8,6 +8,7 @@
 
   const REPO = 'BryanBarbosaBB/Trade-Analyser', BRANCH = 'dados';
   const RELOAD_MS = 5 * 60 * 1000;
+  const SCHEDULE = 'automática: a cada 30 min das 04:00 às 17:30 e de hora em hora das 18:00 às 03:00 (Brasília), de domingo à noite até sexta';
 
   const settings = structuredClone(MA.DEFAULT_SETTINGS);
   const state = { scan: null, ref: BRANCH, full: {}, errors: {}, current: null, tf: 'M15', userPlan: null, loading: false };
@@ -60,7 +61,7 @@
       setStatus(state.scan ? 'Não foi possível atualizar (' + e.message + '). Mostrando os dados anteriores.' : '');
       if (!state.scan) {
         $('setup-hint').classList.remove('hidden');
-        $('setup-hint').innerHTML = 'Ainda não há varredura salva (' + esc(e.message) + '). A primeira roda sozinha no próximo horário: a cada 30 min, de segunda a sexta, das 04:00 às 17:30 de Brasília.';
+        $('setup-hint').innerHTML = 'Ainda não há varredura salva (' + esc(e.message) + '). A primeira roda sozinha no próximo horário (' + SCHEDULE + ').';
       }
     }
     state.loading = false; $('btn-reload').disabled = false;
@@ -75,7 +76,7 @@
     const agoTxt = ago < 1 ? 'agora' : ago < 120 ? 'há ' + ago + ' min' : 'há ' + Math.round(ago / 60) + ' h';
     const n = Object.keys(s.errors || {}).length;
     setStatus('Última varredura: ' + when(s.t) + ' (' + agoTxt + ')' + (n ? ' · ' + n + ' com erro' : '') +
-      ' · automática a cada 30 min, seg–sex, 04:00–17:30 de Brasília');
+      ' · ' + SCHEDULE);
     $('setup-hint').classList.add('hidden');
   }
 
@@ -104,7 +105,7 @@
         h.map((x) => '<tr class="hist-row" data-asset="' + esc(x.asset) + '"><td>' + when(x.t) + '</td><td><b>' + esc(x.asset) + '</b></td><td class="' + (x.dir === 'compra' ? 'up' : 'down') + '">' + esc(x.dir) +
           '</td><td>' + esc(x.setup) + '</td><td class="num">' + x.score + '</td><td>' + fmt(x.entry, x.digits) + '</td><td class="down">' + fmt(x.sl, x.digits) +
           '</td><td class="up">' + fmt(x.tp1, x.digits) + '</td><td class="up">' + fmt(x.tp3, x.digits) + '</td></tr>').join('') + '</table></div>' +
-        '<p class="muted">Cada sinal gera uma notificação no celular (app ntfy). O mesmo ativo/setup/direção só avisa de novo depois de 4 h.</p>'
+        '<p class="muted">Cada sinal gera uma notificação no celular (app ntfy). O mesmo ativo/setup/direção só avisa de novo depois de 4 h. ENTRADA só acontece em Londres/NY (04:00–18:00 de Brasília); à noite (Ásia) o painel é atualizado, mas o backtest não aprovou entradas nesse horário.</p>'
       : '<p class="muted">Nenhum sinal de ENTRADA ainda. Quando aparecer, ele fica guardado aqui e chega no celular.</p>');
   }
 
