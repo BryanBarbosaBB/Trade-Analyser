@@ -1,4 +1,4 @@
-/* Configuração padrão. O usuário pode sobrescrever tudo na tela Configurações (salvo no navegador).
+/* Configuração do motor (usada pelo site, pela varredura automática e pelos scripts).
    td = símbolo no Twelve Data; pip = tamanho de 1 pip/ponto; pipValue = USD por pip por 1 lote padrão
    (aproximado; pares JPY/CAD variam com o câmbio — ajuste conforme sua corretora).
    spread = custo médio de entrada (diferença compra/venda) em preço, usado no backtest.
@@ -27,7 +27,6 @@
     tdKey: '',
     geminiKey: '',
     geminiModel: 'gemini-flash-latest',
-    ntfyTopic: '',
     accountSize: 10000,
     riskPct: 1,
     risk: { slBufferAtr: 0.2, slMinAtr: 0.8, slMaxAtr: 2.5, tp2MinRR: 1.5, tp3RR: 3 },
@@ -36,31 +35,4 @@
     candles: { M15: 500, H1: 1200, D1: 400 }, // H4 é montado a partir do H1 (1200 H1 ≈ 300 H4)
     assets: MA.DEFAULT_ASSETS,
   };
-
-  const KEY = 'ma.settings.v1';
-
-  function load() {
-    let saved = {};
-    try { saved = JSON.parse(localStorage.getItem(KEY) || '{}'); } catch (e) { saved = {}; }
-    const s = Object.assign({}, structuredClone(MA.DEFAULT_SETTINGS), saved);
-    // mescla ativos salvos com os padrão (mantém novos ativos adicionados no código)
-    const byName = Object.fromEntries((saved.assets || []).map((a) => [a.name, a]));
-    // migração: símbolos de índice que não existem no plano grátis voltam para o padrão (ETF)
-    const OBSOLETE = { NAS100: ['NDX'], US30: ['DJI'] };
-    s.assets = MA.DEFAULT_ASSETS.map((a) => {
-      const sv = byName[a.name];
-      if (sv && (OBSOLETE[a.name] || []).includes(sv.td)) return Object.assign({}, a, { enabled: sv.enabled });
-      return Object.assign({}, a, sv || {});
-    });
-    return s;
-  }
-
-  /* Sem "lembrar neste aparelho", as chaves ficam só na memória da aba (não vão para o armazenamento). */
-  function save(s) {
-    const out = Object.assign({}, s);
-    if (MA.auth && !MA.auth.remember()) { out.tdKey = ''; out.geminiKey = ''; }
-    try { localStorage.setItem(KEY, JSON.stringify(out)); return true; } catch (e) { return false; }
-  }
-
-  MA.settings = { load, save };
 })(globalThis.MA = globalThis.MA || {});

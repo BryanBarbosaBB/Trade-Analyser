@@ -158,7 +158,7 @@ function trendData(dir = 1) {
 }
 
 test('analyzeAsset: estrutura do resultado e determinismo', () => {
-  const s = MA.settings.load ? MA.DEFAULT_SETTINGS : null;
+  const s = MA.DEFAULT_SETTINGS;
   const asset = MA.DEFAULT_ASSETS.find((a) => a.name === 'EURUSD');
   const data = trendData(1), now = data.M15.at(-1).t + 1800;
   const r1 = MA.setups.analyzeAsset(asset, data, s, now), r2 = MA.setups.analyzeAsset(asset, data, s, now);
@@ -187,16 +187,6 @@ test('gatilho RSI', () => {
   assert.ok(MA.setups.rsiTrigger('venda', [60, 72, 75, 73, 71, 72, 70, 71, 68]));
 });
 
-// ---------------- cofre ----------------
-require('../js/auth.js');
-test('cofre: criptografa e abre com usuário/senha corretos, recusa errados', async () => {
-  const data = { tdKey: 'td-123', geminiKey: 'gm-456' };
-  const v = await MA.auth.encrypt(data, 'Bryan', 'senha-forte-123!', 1000);
-  assert.ok(!JSON.stringify(v).includes('td-123'), 'chave não aparece em texto puro');
-  assert.deepEqual(await MA.auth.decrypt(v, 'bryan ', 'senha-forte-123!'), data); // usuário sem diferenciar maiúsc./espaço
-  assert.equal(await MA.auth.decrypt(v, 'bryan', 'senha-errada'), null);
-  assert.equal(await MA.auth.decrypt(v, 'outro', 'senha-forte-123!'), null);
-});
 
 // ---------------- backtest ----------------
 require('../js/backtest.js');

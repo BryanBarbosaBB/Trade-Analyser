@@ -7,3 +7,4 @@ __pycache__/
 .bt-data-mt5/
 backtest-result-mt5.json
 lab-result.json
+dados/

@@ -1,0 +1,50 @@
+# Varredura automática: a cada 30 min, de segunda a sexta, das 07:00 às 20:30 UTC
+# (04:00–17:30 em Brasília), que é o horário de Londres/NY em que o motor pode dar ENTRADA.
+# Resultado salvo no ramo `dados` (um único commit, substituído a cada rodada). O site lê de lá.
+# Secrets (Settings → Secrets and variables → Actions): TD_KEY (obrigatório) e NTFY_TOPIC.
+name: Varredura
+
+on:
+  schedule:
+    - cron: '0,30 7-20 * * 1-5'
+  workflow_dispatch: {}
+
+permissions:
+  contents: write
+
+concurrency:
+  group: varredura
+  cancel-in-progress: false
+
+jobs:
+  scan:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+
+      - name: Baixa os dados da rodada anterior
+        run: |
+          git clone --depth 1 --branch dados "https://x-access-token:${{ secrets.GITHUB_TOKEN }}@github.com/${{ github.repository }}.git" dados \
+            || mkdir -p dados
+
+      - name: Varre os ativos
+        env:
+          TD_KEY: ${{ secrets.TD_KEY }}
+          NTFY_TOPIC: ${{ secrets.NTFY_TOPIC }}
+        run: node scripts/scan.js dados
+
+      - name: Salva no ramo dados
+        working-directory: dados
+        run: |
+          rm -rf .git
+          git init -q -b dados
+          git config user.name "varredura"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add -A
+          git commit -q -m "Varredura $(date -u +'%Y-%m-%d %H:%M') UTC"
+          git push -q --force "https://x-access-token:${{ secrets.GITHUB_TOKEN }}@github.com/${{ github.repository }}.git" dados

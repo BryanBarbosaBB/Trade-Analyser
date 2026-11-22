@@ -1,64 +1,47 @@
 # Analisador de Mercado (web)
 
-Uma única página web, sem servidor e sem instalação. Você abre no navegador (PC ou celular) e clica em
-**Varrer todos**. A página baixa as cotações, calcula a análise e mostra um painel com os ativos
-ordenados pelo score. Tocando num ativo, abre o gráfico com zonas, suportes e resistências, entrada,
-SL e TP, e o botão **Analisar com IA**.
+Uma página web sem login. Uma **varredura automática** roda no GitHub a cada 30 minutos: baixa as cotações,
+calcula a análise dos 12 ativos e salva o resultado. Quando aparece uma **ENTRADA**, chega uma notificação no
+celular (app ntfy). O site (https://bryanbarbosabb.github.io/Trade-Analyser/) só mostra o que foi salvo, por isso
+**PC e celular veem exatamente o mesmo resultado**. Tocando num ativo, abre o gráfico com zonas, suportes e
+resistências, entrada, SL e TP. Embaixo do painel fica o **histórico de sinais de ENTRADA**.
 
 > Ferramenta de estudo e apoio à decisão. **Não é recomendação de investimento.**
+
+## Varredura automática (GitHub Actions)
+| Item | Como é |
+|---|---|
+| Quando roda | A cada 30 min, de segunda a sexta, das 07:00 às 20:30 UTC (**04:00–17:30 em Brasília**), que é o horário de Londres/NY. Fora dele o motor nunca dá ENTRADA. |
+| Arquivo | `.github/workflows/varredura.yml` → `node scripts/scan.js` |
+| Onde salva | Ramo **`dados`** do repositório: `scan.json` (resumo, histórico e controle de alertas) e `velas/<ATIVO>.json`. Cada rodada substitui o commit anterior, então o ramo não cresce. |
+| O site | Lê o commit mais novo do ramo `dados` e, ao abrir um ativo, refaz a análise com as velas salvas (mesmo resultado da varredura). Atualiza sozinho a cada 5 min. |
+| Alertas | Um por ENTRADA. O mesmo ativo/setup/direção só avisa de novo depois de 4 h. A notificação abre o site direto no ativo. |
+| Consultas | Só busca as velas que podem ter mudado (M15 a cada rodada, H1 a cada hora, D1 uma vez por dia): cerca de 540 por dia, abaixo do limite grátis de 800. |
+
+### Configurar (uma vez)
+No GitHub: **repositório → Settings → Secrets and variables → Actions → New repository secret**:
+- `TD_KEY`: chave da Twelve Data (https://twelvedata.com/account/api-keys).
+- `NTFY_TOPIC`: tópico do app ntfy (o mesmo assinado no celular).
+
+Para testar na hora: **Actions → Varredura → Run workflow**.
+
+Observações:
+- O GitHub pode atrasar as rodadas agendadas alguns minutos quando está sobrecarregado.
+- Em repositório público, o GitHub **desliga os agendamentos depois de 60 dias sem commits**. Se isso acontecer, ele avisa por e-mail; basta clicar em *Enable workflow* em **Actions**.
+- Se a varredura falhar, o GitHub manda e-mail e o site continua mostrando a última varredura boa.
+- Teste local do site com dados de uma pasta: `python -m http.server 8770` e abra `http://127.0.0.1:8770/?dados=pasta`.
 
 ## Como funciona
 | Parte | O que faz |
 |---|---|
-| `js/data.js` | Cotações do **Twelve Data** (plano grátis). Busca M15, H1 e D1 e monta o H4 a partir do H1, ou seja, 3 requisições por ativo. Respeita o limite de 8 por minuto e guarda cache no navegador. |
+| `scripts/scan.js` | Varredura automática: busca M15, H1 e D1 na **Twelve Data**, monta o H4 a partir do H1, roda o motor e salva no ramo `dados`. NAS100/US30 usam os ETFs **QQQ/DIA** (os índices não estão no plano grátis; o lote não é calculado). |
+| `js/data.js` | Leitura e conversão das velas e montagem do H4 |
 | `js/indicators.js` | EMA 50/200, RSI(14), MACD, ATR(14) e ADX, com suavização de Wilder, como no TradingView e no MT5 |
 | `js/analysis.js` | Topos e fundos, tendência por timeframe, S/R agrupados, zonas de oferta e demanda, máx./mín. do dia e da semana anteriores, sessões, divergência de RSI |
 | `js/setups.js` | Setups **Pullback na tendência** e **Rompimento com reteste**, score de 0 a 100 e status ENTRADA / OBSERVAR / SEM SETUP |
 | `js/risk.js` | SL além da invalidação mais 0,2 ATR, limitado entre 0,8 e 2,5 ATR. TP1 = 1R, TP2 = próximo nível com R:R ≥ 1,5, TP3 = 3R ou nível do H4/D1. Também calcula o lote. |
-| `js/ai.js` | **Google Gemini** (grátis). Recebe só os números calculados e devolve resumo, qualidade de 1 a 5, riscos e se confirma o setup. Também faz o ranking entre ativos. Nunca cria preços. |
 
 **Composição do score:** alinhamento D1/H4 vale 30, qualidade da zona 20, momento (RSI/MACD) 15, R:R até o nível contrário 15, volatilidade 10 e sessão 10.
-
-## Chaves gratuitas (só precisa de e-mail)
-1. **Twelve Data:** https://twelvedata.com/pricing → plano *Basic* (grátis) → copie a API key.
-2. **Gemini:** https://aistudio.google.com/app/apikey → *Create API key*.
-3. Na página, abra **Configurações**, cole as duas chaves e clique em **Salvar**. As chaves ficam só no seu navegador.
-
-**Limites do plano grátis do Twelve Data:** 8 requisições por minuto e 800 por dia.
-- Varrer os 12 ativos usa 36 requisições e leva uns 5 minutos por causa do limite por minuto.
-- Abrir um único ativo é rápido.
-- **NAS100/US30:** os índices (`NDX`/`DJI`) não estão no plano grátis. Por isso a página usa os ETFs **QQQ/DIA**, que acompanham os mesmos índices. Servem para ler tendência e estrutura, mas o preço é diferente do índice e o lote não é calculado.
-- **Gemini:** quando o modelo principal está sobrecarregado ou não responde em 25 s, a página tenta de novo e depois troca sozinha para `gemini-flash-lite-latest`.
-
-## Login e chaves salvas no site (cofre)
-As chaves podem ficar gravadas no site, **criptografadas** (AES-256-GCM, chave derivada de usuário e senha com PBKDF2, 600 mil iterações). Com o cofre criado:
-- Na primeira vez em cada aparelho, clique em **Entrar** e informe usuário e senha. Com **Lembrar neste aparelho** marcado, o painel passa a abrir direto, já com as chaves.
-- **Configurações** sempre pedem login de novo a cada sessão.
-- **Sair e esquecer chaves deste aparelho** apaga as chaves do navegador.
-
-Criar ou trocar o cofre (rode no seu terminal):
-```
-cd C:\CLAUDE\analisador-web
-node scripts/make-vault.js
-git add js/vault.js
-git commit -m "Atualiza cofre"
-git push
-```
-O arquivo do cofre é público, então qualquer um pode testar senhas nele sem limite. Use uma senha forte, com 12 caracteres ou mais; o script recusa senhas curtas.
-
-## Usar no PC agora
-Os arquivos funcionam abrindo o `index.html` direto. Se o navegador bloquear, sirva a pasta:
-```
-cd C:\CLAUDE\analisador-web
-python -m http.server 8765
-```
-e abra http://127.0.0.1:8765
-
-## Publicar grátis para abrir no celular (GitHub Pages)
-1. Crie uma conta em https://github.com e um repositório novo, por exemplo `analisador`.
-2. Na página do repositório: **Add file → Upload files** → arraste o **conteúdo** da pasta `analisador-web` (index.html, css/, js/) → **Commit**.
-3. **Settings → Pages → Branch: main / (root) → Save**.
-4. Em cerca de 1 minuto o site fica em `https://SEU-USUARIO.github.io/analisador/`. Abra no celular e configure as chaves; cada navegador guarda as suas.
 
 ## Backtest
 ```
@@ -90,6 +73,6 @@ Leitura: no período longo, a regra nos 12 ativos fica no zero a zero. O resulta
 
 ## Testes
 ```
-node --test tests/engine.test.js        # 19 testes do motor (indicadores, níveis, zonas, setups, SL/TP, lote)
+node --test tests/engine.test.js tests/scan.test.js   # motor + varredura automática (25 testes)
 node scripts/smoke.js SUA_CHAVE XAUUSD  # análise com dados reais no terminal
 ```
