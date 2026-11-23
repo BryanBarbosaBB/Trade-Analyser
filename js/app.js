@@ -106,7 +106,7 @@
         h.map((x) => '<tr class="hist-row" data-asset="' + esc(x.asset) + '"><td>' + when(x.t) + '</td><td><b>' + esc(x.asset) + '</b>' + (x.asia ? ' <small class="warn-txt">Ásia</small>' : '') + '</td><td class="' + (x.dir === 'compra' ? 'up' : 'down') + '">' + esc(x.dir) +
           '</td><td>' + esc(x.setup) + '</td><td class="num">' + x.score + '</td><td>' + fmt(x.entry, x.digits) + '</td><td class="down">' + fmt(x.sl, x.digits) +
           '</td><td class="up">' + fmt(x.tp1, x.digits) + '</td><td class="up">' + fmt(x.tp3, x.digits) + '</td></tr>').join('') + '</table></div>' +
-        '<p class="muted">Cada sinal gera uma notificação no celular (app ntfy). O mesmo ativo/setup/direção só avisa de novo depois de 4 h. Sinais marcados <span class="warn-txt">Ásia</span> (noite) <b>não foram validados</b> no backtest: perderam no treino (−0,20R por trade).</p>'
+        '<p class="muted">Cada sinal gera uma notificação no celular (app ntfy). O mesmo ativo/setup/direção não repete enquanto o sinal continua ativo; se ele sumir e voltar, avisa de novo. Sinais marcados <span class="warn-txt">Ásia</span> (noite) <b>não foram validados</b> no backtest: perderam no treino (−0,20R por trade).</p>'
       : '<p class="muted">Nenhum sinal de ENTRADA ainda. Quando aparecer, ele fica guardado aqui e chega no celular.</p>');
   }
 

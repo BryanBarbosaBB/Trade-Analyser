@@ -17,7 +17,6 @@ const MA = globalThis.MA;
 const INTERVAL = { M15: '15min', H1: '1h', D1: '1day' };
 const TF_SEC = MA.data.TF_SEC;
 const PER_MIN = 7;                    // plano grátis: 8 requisições por minuto
-const ALERT_COOLDOWN = 4 * 3600;      // mesmo ativo/setup/direção não avisa de novo por 4 h
 const HISTORY_MAX = 300;              // sinais guardados no histórico
 const SITE = process.env.SITE_URL || 'https://bryanbarbosabb.github.io/Trade-Analyser/';
 
@@ -99,10 +98,11 @@ async function runScan({ dir, key, topic, fetchFn = fetch, now = Math.floor(Date
   const assets = MA.DEFAULT_ASSETS.filter((a) => a.enabled);
   const out = {
     t: now, source: 'Twelve Data', assets: [], errors: {}, requests: 0,
-    history: prev.history || [], alerted: {},
+    history: prev.history || [], alerted: Object.assign({}, prev.alerted),
   };
-  // controle de alertas: mantém só os recentes
-  for (const [k, t] of Object.entries(prev.alerted || {})) if (now - t < ALERT_COOLDOWN) out.alerted[k] = t;
+  /* Controle de alertas ("rearmar"): o mesmo ativo/setup/direção fica em silêncio só enquanto continua ENTRADA.
+     Se numa varredura ele deixa de ser ENTRADA, o aviso rearma e o próximo gatilho notifica de novo. */
+  const active = new Set(), analyzed = new Set();
 
   for (const asset of assets) {
     const file = path.join(dir, 'velas', asset.name + '.json');
@@ -128,11 +128,13 @@ async function runScan({ dir, key, topic, fetchFn = fetch, now = Math.floor(Date
       const r = MA.setups.analyzeAsset(asset, data, settings, now);
       const s = summarize(asset, r);
       out.assets.push(s);
+      analyzed.add(asset.name);
       log(asset.name.padEnd(7), String(s.score).padStart(3), s.status, s.best ? s.best.name + ' ' + s.best.dir : '');
 
       const b = s.best;
       if (b && b.status === 'ENTRADA') {
         const k = asset.name + '|' + b.name + '|' + b.dir;
+        active.add(k);
         if (!out.alerted[k]) {
           out.alerted[k] = now;
           out.history.unshift({ t: now, candle: s.updated, asset: asset.name, setup: b.name, dir: b.dir, score: b.score, digits: s.digits, asia: b.asia,
@@ -152,6 +154,8 @@ async function runScan({ dir, key, topic, fetchFn = fetch, now = Math.floor(Date
       if (old) out.assets.push(Object.assign({}, old, { stale: true }));
     }
   }
+  // rearma: sinal avisado que não está mais em ENTRADA num ativo analisado nesta rodada (ativo com erro não rearma)
+  for (const k of Object.keys(out.alerted)) if (analyzed.has(k.split('|')[0]) && !active.has(k)) delete out.alerted[k];
   out.history = out.history.slice(0, HISTORY_MAX);
   fs.writeFileSync(path.join(dir, 'scan.json'), JSON.stringify(out));
   log('Requisições Twelve Data:', out.requests, '| erros:', Object.keys(out.errors).length);

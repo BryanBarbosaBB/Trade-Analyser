@@ -81,13 +81,15 @@ test('varredura: grava resumo e velas, e o site reproduz a mesma análise', asyn
   assert.equal(hour.requests, enabled.length * 2);
 });
 
-test('varredura: ENTRADA avisa uma vez, guarda no histórico e não repete por 4 h', async () => {
+test('varredura: ENTRADA avisa uma vez, guarda no histórico e só rearma quando o sinal some', async () => {
   const dir = tmp(), log = { td: [], ntfy: [] };
   const real = MA.setups.analyzeAsset;
+  let force = true;
   // força uma ENTRADA no EURUSD, sem mexer no resto do motor
   MA.setups.analyzeAsset = (asset, data, s, now) => {
     const r = real(asset, data, s, now);
-    if (asset.name === 'EURUSD' && r.best) { r.best.status = 'ENTRADA'; r.status = 'ENTRADA'; }
+    if (force && asset.name === 'EURUSD' && r.best) { r.best.status = 'ENTRADA'; r.status = 'ENTRADA'; }
+    if (!force && asset.name === 'EURUSD' && r.best) { r.best.status = 'OBSERVAR'; r.status = 'OBSERVAR'; }
     return r;
   };
   try {
@@ -99,9 +101,15 @@ test('varredura: ENTRADA avisa uma vez, guarda no histórico e não repete por 4
     assert.equal(log.ntfy[0].topic, 't');
     assert.equal(a.history.length, 1);
     await run(NOW + 1800);
-    assert.equal(log.ntfy.length, 1, 'não repete dentro de 4 h');
-    const c = await run(NOW + 4 * 3600 + 60);
-    assert.equal(log.ntfy.length, 2, 'avisa de novo depois de 4 h');
+    await run(NOW + 6 * 3600);
+    assert.equal(log.ntfy.length, 1, 'o mesmo sinal ainda ativo não repete, nem depois de horas');
+    force = false;
+    const b = await run(NOW + 6 * 3600 + 1800);
+    assert.equal(log.ntfy.length, 1, 'sinal sumiu: não avisa');
+    assert.deepEqual(Object.keys(b.alerted).filter((k) => k.startsWith('EURUSD|')), [], 'sinal sumiu: aviso rearmado');
+    force = true;
+    const c = await run(NOW + 7 * 3600);
+    assert.equal(log.ntfy.length, 2, 'gatilho novo depois de rearmar: avisa de novo');
     assert.equal(c.history.length, 2);
   } finally { MA.setups.analyzeAsset = real; }
 });

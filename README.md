@@ -17,7 +17,7 @@ resistências, entrada, SL e TP. Embaixo do painel fica o **histórico de sinais
 | Arquivo | `.github/workflows/varredura.yml` → `node scripts/scan.js` |
 | Onde salva | Ramo **`dados`** do repositório: `scan.json` (resumo, histórico e controle de alertas) e `velas/<ATIVO>.json`. Cada rodada substitui o commit anterior, então o ramo não cresce. |
 | O site | Lê o commit mais novo do ramo `dados` e, ao abrir um ativo, refaz a análise com as velas salvas (mesmo resultado da varredura). Atualiza sozinho a cada 5 min. |
-| Alertas | Um por ENTRADA. O mesmo ativo/setup/direção só avisa de novo depois de 4 h. A notificação abre o site direto no ativo. |
+| Alertas | Um por ENTRADA. O mesmo ativo/setup/direção não repete enquanto o sinal continua ativo; se ele deixar de ser ENTRADA numa varredura e voltar depois, avisa de novo. A notificação abre o site direto no ativo. |
 | Consultas | Só busca as velas que podem ter mudado (M15 a cada rodada, H1 a cada hora, D1 uma vez por dia); QQQ/DIA só no pregão americano. Cerca de 650 por dia (teste `orçamento` em `tests/scan.test.js`), abaixo do limite grátis de 800. Cada *Run workflow* manual gasta até 36 a mais. |
 
 ### Configurar (uma vez)
