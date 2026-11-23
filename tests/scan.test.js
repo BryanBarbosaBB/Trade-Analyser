@@ -128,14 +128,10 @@ test('ETFs só gastam consulta no pregão americano', () => {
 test('orçamento: um dia inteiro no agendamento do workflow cabe nas 800 consultas da Twelve Data', async () => {
   const dir = tmp(), log = { td: [], ntfy: [] };
   const day = Date.UTC(2026, 10, 18) / 1000; // quarta 00:00 UTC
-  // véspera às 23:00 (última rodada da noite anterior) para começar com velas salvas
-  const runs = [day - 3600];
-  // mesmo agendamento do .github/workflows/varredura.yml: 30 em 30 min, exceto 07:00–10:30 UTC; às 06:00 só uma
-  for (let h = 0; h < 24; h++) {
-    if (h >= 7 && h <= 10) continue;
-    runs.push(day + h * 3600);
-    if (h !== 6) runs.push(day + h * 3600 + 1800);
-  }
+  const { isSlot } = require('../scripts/agenda.js');
+  // véspera às 23:30 (última rodada da noite anterior) para começar com velas salvas; depois, os horários da agenda
+  const runs = [day - 1800];
+  for (let t = day; t < day + 86400; t += 1800) if (isSlot(t)) runs.push(t + 90);
   let total = 0;
   for (const [i, now] of runs.entries()) {
     const o = await runScan({ dir, key: 'k', topic: '', fetchFn: fakeFetch(log, now), now, throttle: noThrottle, log: quiet });
@@ -159,4 +155,46 @@ test('sinais da Ásia: só com asiaSignals, sempre marcados; o padrão (robô) n
     assert.equal(on.candidates.length, off.candidates.length);
   }
   assert.ok(asiaSeen >= 0);
+});
+
+test('agenda: horários de Brasília 08:00–03:00, de domingo à noite até sexta', () => {
+  const { isSlot } = require('../scripts/agenda.js');
+  const brt = (dia, h, m = 0) => Date.UTC(2026, 10, dia, h + 3, m) / 1000; // dia 22/11/2026 = domingo
+  assert.equal(isSlot(brt(22, 17, 30)), false, 'domingo à tarde não');
+  assert.equal(isSlot(brt(22, 18)), true, 'domingo 18:00');
+  assert.equal(isSlot(brt(22, 23, 30)), true);
+  assert.equal(isSlot(brt(23, 2, 30)), true);
+  assert.equal(isSlot(brt(23, 3)), true, 'última da madrugada 03:00');
+  assert.equal(isSlot(brt(23, 3, 30)), false);
+  assert.equal(isSlot(brt(23, 7, 30)), false);
+  assert.equal(isSlot(brt(23, 8)), true, 'começa 08:00');
+  assert.equal(isSlot(brt(23, 8, 15)), false, 'só :00 e :30');
+  assert.equal(isSlot(brt(26, 23, 30)), true, 'quinta 23:30');
+  assert.equal(isSlot(brt(27, 3)), true, 'sexta 03:00');
+  assert.equal(isSlot(brt(27, 17, 30)), true, 'sexta 17:30');
+  assert.equal(isSlot(brt(27, 18)), false, 'sexta à noite não');
+  assert.equal(isSlot(brt(28, 12)), false, 'sábado não');
+  let n = 0; for (let t = brt(22, 0); t < brt(29, 0); t += 1800) n += isSlot(t); // semana inteira
+  assert.equal(n, 5 * 39, '39 varreduras por dia útil (20 de dia + 19 à noite)');
+});
+
+test('agenda: a corrente varre cada horário uma vez e nunca para', () => {
+  const { deveVarrer, espera, isSlot } = require('../scripts/agenda.js');
+  const brt = (dia, h, m = 0) => Date.UTC(2026, 10, dia, h + 3, m) / 1000;
+  assert.equal(deveVarrer(brt(23, 8, 1), brt(23, 3, 2)), true);
+  assert.equal(deveVarrer(brt(23, 8, 20), brt(23, 8, 2)), false, 'já varrido');
+  assert.equal(deveVarrer(brt(23, 5), 0), false, 'fora do horário');
+  // simula a corrente por 2 semanas: cada rodada espera e dispara a próxima (com até 60 s de fila no GitHub)
+  let t = brt(22, 12, 7), ultima = 0, varridos = new Set(), rodadas = 0;
+  const fim = brt(22, 0) + 14 * 86400;
+  while (t < fim) {
+    if (deveVarrer(t, ultima)) { varridos.add(Math.floor(t / 1800) * 1800); ultima = t + 200; t += 200; }
+    const s = espera(t);
+    assert.ok(s > 0 && s <= 5.5 * 3600, 'espera dentro do limite do job: ' + s);
+    t += s + 45; rodadas++;
+  }
+  let esperado = 0;
+  for (let s = brt(22, 12, 30); s < fim - 1800; s += 1800) if (isSlot(s)) { esperado++; assert.ok(varridos.has(s), 'faltou ' + new Date(s * 1000).toISOString()); }
+  assert.equal(varridos.size, esperado, 'nenhuma varredura extra');
+  assert.ok(rodadas < esperado + 60, 'rodadas: ' + rodadas);
 });

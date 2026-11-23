@@ -11,7 +11,8 @@ resistências, entrada, SL e TP. Embaixo do painel fica o **histórico de sinais
 ## Varredura automática (GitHub Actions)
 | Item | Como é |
 |---|---|
-| Quando roda | A cada 30 min, do domingo à noite até sexta, das **08:00 às 03:00** de Brasília (nada entre 03:00 e 08:00). |
+| Quando roda | A cada 30 min, do domingo à noite até sexta, das **08:00 às 03:00** de Brasília (nada entre 03:00 e 08:00). Horários em `scripts/agenda.js`. |
+| Como garante o horário | O cron do GitHub atrasa e pula horários. Por isso cada rodada, ao terminar, espera o próximo horário e dispara a seguinte (uma "corrente"). Um cron de hora em hora só religa a corrente se ela cair. Rodadas "Cancelled" na lista de Actions são normais: são reservas que não foram necessárias. |
 | Ásia | Das 21:00 às 03:00 de Brasília, a sessão da Ásia também gera ENTRADA e notificação, marcada **"ÁSIA (não validado)"**: no backtest MT5 ela perdeu no treino (−0,20R/trade) e ganhou no teste (+0,15R). Ligado por `asiaSignals` (scripts/scan.js e js/app.js). |
 | Arquivo | `.github/workflows/varredura.yml` → `node scripts/scan.js` |
 | Onde salva | Ramo **`dados`** do repositório: `scan.json` (resumo, histórico e controle de alertas) e `velas/<ATIVO>.json`. Cada rodada substitui o commit anterior, então o ramo não cresce. |
@@ -27,8 +28,8 @@ No GitHub: **repositório → Settings → Secrets and variables → Actions →
 Para testar na hora: **Actions → Varredura → Run workflow**. Para testar só a notificação no celular: **Actions → Teste de notificação → Run workflow**.
 
 Observações:
-- O GitHub pode atrasar as rodadas agendadas alguns minutos quando está sobrecarregado.
-- Em repositório público, o GitHub **desliga os agendamentos depois de 60 dias sem commits**. Se isso acontecer, ele avisa por e-mail; basta clicar em *Enable workflow* em **Actions**.
+- Em **Actions** sempre há uma rodada da Varredura "em andamento": é a corrente esperando o próximo horário. Não cancele.
+- Em repositório público, o GitHub desliga o cron de reserva depois de 60 dias sem commits (a corrente continua). Se ele avisar por e-mail, clique em *Enable workflow* em **Actions**.
 - Se a varredura falhar, o GitHub manda e-mail e o site continua mostrando a última varredura boa.
 - Teste local do site com dados de uma pasta: `python -m http.server 8770` e abra `http://127.0.0.1:8770/?dados=pasta`.
 

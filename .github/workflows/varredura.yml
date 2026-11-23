@@ -1,30 +1,42 @@
-# Varredura automática a cada 30 min, do domingo à noite até sexta (horários em UTC; Brasília = UTC−3):
-#   - 11:00–20:30 UTC = 08:00–17:30 Brasília (Londres/NY);
-#   - 21:00–06:00 UTC = 18:00–03:00 Brasília (Ásia: sinais marcados como "não validados").
-#   Nada roda entre 03:00 e 08:00 de Brasília. ~650 consultas/dia (limite grátis da Twelve Data: 800).
+# Varredura automática a cada 30 min, de domingo à noite até sexta (horários em scripts/agenda.js):
+#   08:00–17:30 Brasília (Londres/NY) e 18:00–03:00 Brasília (Ásia: sinais "não validados"). Nada entre 03:00 e 08:00.
+#   ~650 consultas/dia (limite grátis da Twelve Data: 800).
+#
+# Como garante o horário: o cron do GitHub atrasa e pula horários, então cada rodada, ao terminar, ESPERA o próximo
+# horário e dispara a seguinte (a "corrente"). O cron abaixo é só reserva: religa a corrente se ela cair.
+# Uma rodada só varre se o horário atual ainda não foi varrido, então rodadas extras não gastam consultas.
+# "Run workflow" manual varre na hora (forçar) e não mexe na corrente.
+#
 # Resultado salvo no ramo `dados` (um único commit, substituído a cada rodada). O site lê de lá.
 # Secrets (Settings → Secrets and variables → Actions): TD_KEY (obrigatório) e NTFY_TOPIC.
 name: Varredura
 
 on:
   schedule:
-    - cron: '0,30 11-20 * * 1-5'
-    - cron: '0,30 21-23 * * 0-4'
-    - cron: '0,30 0-5 * * 1-5'
-    - cron: '0 6 * * 1-5'
-  workflow_dispatch: {}
+    - cron: '17 * * * *'
+  push:
+    branches: [main]
+    paths: ['.github/workflows/varredura.yml', 'scripts/scan.js', 'scripts/agenda.js']
+  workflow_dispatch:
+    inputs:
+      forcar:
+        description: 'Varrer agora (mesmo fora do horário)'
+        type: boolean
+        default: true
 
 permissions:
   contents: write
+  actions: write
 
+# Rodadas da corrente ficam numa fila de uma só: a mais nova substitui a que estava esperando, então nunca há duas correntes.
 concurrency:
-  group: varredura
+  group: varredura-${{ github.event_name == 'workflow_dispatch' && inputs.forcar && 'manual' || 'corrente' }}
   cancel-in-progress: false
 
 jobs:
   scan:
     runs-on: ubuntu-latest
-    timeout-minutes: 20
+    timeout-minutes: 355
     steps:
       - uses: actions/checkout@v4
 
@@ -37,13 +49,25 @@ jobs:
           git clone --depth 1 --branch dados "https://x-access-token:${{ secrets.GITHUB_TOKEN }}@github.com/${{ github.repository }}.git" dados \
             || mkdir -p dados
 
+      - name: Confere se é hora de varrer
+        id: hora
+        run: |
+          if [ "${{ github.event_name == 'workflow_dispatch' && inputs.forcar }}" = "true" ]; then
+            echo "varrer=true" | tee -a "$GITHUB_OUTPUT"
+          else
+            node scripts/agenda.js deve-varrer dados | tee -a "$GITHUB_OUTPUT"
+          fi
+
       - name: Varre os ativos
+        if: steps.hora.outputs.varrer == 'true'
+        timeout-minutes: 20
         env:
           TD_KEY: ${{ secrets.TD_KEY }}
           NTFY_TOPIC: ${{ secrets.NTFY_TOPIC }}
         run: node scripts/scan.js dados
 
       - name: Salva no ramo dados
+        if: steps.hora.outputs.varrer == 'true'
         working-directory: dados
         run: |
           rm -rf .git
@@ -53,3 +77,21 @@ jobs:
           git add -A
           git commit -q -m "Varredura $(date -u +'%Y-%m-%d %H:%M') UTC"
           git push -q --force "https://x-access-token:${{ secrets.GITHUB_TOKEN }}@github.com/${{ github.repository }}.git" dados
+
+      - name: Espera o próximo horário e dispara a próxima rodada
+        if: ${{ !cancelled() && !(github.event_name == 'workflow_dispatch' && inputs.forcar) }}
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          s=$(node scripts/agenda.js espera)
+          echo "Próxima rodada em $((s / 60)) min ($(date -u -d "+$s sec" +'%H:%M') UTC)"
+          sleep "$s"
+          for i in 1 2 3 4 5; do
+            code=$(curl -s -o /tmp/r.txt -w '%{http_code}' -X POST \
+              -H "Authorization: Bearer $GH_TOKEN" -H "Accept: application/vnd.github+json" \
+              "https://api.github.com/repos/${{ github.repository }}/actions/workflows/varredura.yml/dispatches" \
+              -d '{"ref":"main","inputs":{"forcar":false}}')
+            [ "$code" = "204" ] && echo "próxima rodada disparada" && exit 0
+            echo "tentativa $i: HTTP $code $(cat /tmp/r.txt)"; sleep 20
+          done
+          exit 1

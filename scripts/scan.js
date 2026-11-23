@@ -1,4 +1,4 @@
-/* Varredura automática (GitHub Actions, a cada 30 min: 08:00–17:30 e 18:00–03:00 de Brasília).
+/* Varredura automática (GitHub Actions, a cada 30 min das 08:00 às 03:00 de Brasília; horários em agenda.js).
    Uso: TD_KEY=... NTFY_TOPIC=... node scripts/scan.js <pasta-de-dados>
 
    A pasta de dados é o ramo `dados` do repositório. O script lê o que já estava lá, busca na Twelve Data
