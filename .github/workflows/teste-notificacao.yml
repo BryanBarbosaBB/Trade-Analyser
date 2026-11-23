@@ -1,0 +1,25 @@
+# Botão de teste: Actions → "Teste de notificação" → Run workflow.
+# Manda uma notificação para o mesmo tópico do ntfy usado pela varredura (secret NTFY_TOPIC).
+name: Teste de notificação
+
+on:
+  workflow_dispatch: {}
+
+permissions:
+  contents: read
+
+jobs:
+  notificar:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Envia notificação de teste
+        env:
+          NTFY_TOPIC: ${{ secrets.NTFY_TOPIC }}
+        run: |
+          if [ -z "$NTFY_TOPIC" ]; then echo "::error::Falta o secret NTFY_TOPIC"; exit 1; fi
+          HORA=$(TZ=America/Sao_Paulo date +'%d/%m %H:%M')
+          BODY=$(jq -n --arg topic "$NTFY_TOPIC" --arg hora "$HORA" \
+            '{topic: $topic, title: "Teste do Analisador", message: ("Se você recebeu isto, os alertas da varredura estão funcionando. (" + $hora + ")"), priority: 4, tags: ["white_check_mark"], click: "https://bryanbarbosabb.github.io/Trade-Analyser/"}')
+          curl -sS --fail -H "Content-Type: application/json" -d "$BODY" https://ntfy.sh/ > /dev/null
+          echo "Notificação enviada às $HORA (Brasília). Confira o celular."

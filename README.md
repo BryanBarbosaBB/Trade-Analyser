@@ -24,7 +24,7 @@ No GitHub: **repositório → Settings → Secrets and variables → Actions →
 - `TD_KEY`: chave da Twelve Data (https://twelvedata.com/account/api-keys).
 - `NTFY_TOPIC`: tópico do app ntfy (o mesmo assinado no celular).
 
-Para testar na hora: **Actions → Varredura → Run workflow**.
+Para testar na hora: **Actions → Varredura → Run workflow**. Para testar só a notificação no celular: **Actions → Teste de notificação → Run workflow**.
 
 Observações:
 - O GitHub pode atrasar as rodadas agendadas alguns minutos quando está sobrecarregado.
