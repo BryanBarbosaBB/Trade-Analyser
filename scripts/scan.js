@@ -1,4 +1,4 @@
-/* Varredura automática (GitHub Actions: a cada 30 min em Londres/NY e de hora em hora na sessão da Ásia).
+/* Varredura automática (GitHub Actions, a cada 30 min: 08:00–17:30 e 18:00–03:00 de Brasília).
    Uso: TD_KEY=... NTFY_TOPIC=... node scripts/scan.js <pasta-de-dados>
 
    A pasta de dados é o ramo `dados` do repositório. O script lê o que já estava lá, busca na Twelve Data
@@ -84,7 +84,7 @@ function summarize(asset, r) {
     score: r.score, status: r.status, updated: r.updated, session: r.session.label,
     bias: Object.fromEntries(['D1', 'H4', 'H1', 'M15'].map((k) => [k, r.bias[k].dir])),
     best: b ? {
-      name: b.name, dir: b.dir, status: b.status, score: b.score, triggered: b.triggered, distAtr: round(b.area.distAtr, 2),
+      name: b.name, dir: b.dir, status: b.status, score: b.score, triggered: b.triggered, distAtr: round(b.area.distAtr, 2), asia: !!b.asia,
       entry: round(b.plan.entry, d), sl: round(b.plan.sl, d), tp1: round(b.plan.tp1, d), tp2: round(b.plan.tp2, d), tp3: round(b.plan.tp3, d),
     } : null,
   };
@@ -95,6 +95,7 @@ async function runScan({ dir, key, topic, fetchFn = fetch, now = Math.floor(Date
   fs.mkdirSync(path.join(dir, 'velas'), { recursive: true });
   const prev = readJson(path.join(dir, 'scan.json'), {});
   const settings = structuredClone(MA.DEFAULT_SETTINGS);
+  settings.asiaSignals = true; // escolha do usuário: sinais da Ásia também (marcados como não validados)
   const assets = MA.DEFAULT_ASSETS.filter((a) => a.enabled);
   const out = {
     t: now, source: 'Twelve Data', assets: [], errors: {}, requests: 0,
@@ -134,10 +135,10 @@ async function runScan({ dir, key, topic, fetchFn = fetch, now = Math.floor(Date
         const k = asset.name + '|' + b.name + '|' + b.dir;
         if (!out.alerted[k]) {
           out.alerted[k] = now;
-          out.history.unshift({ t: now, candle: s.updated, asset: asset.name, setup: b.name, dir: b.dir, score: b.score, digits: s.digits,
+          out.history.unshift({ t: now, candle: s.updated, asset: asset.name, setup: b.name, dir: b.dir, score: b.score, digits: s.digits, asia: b.asia,
             entry: b.entry, sl: b.sl, tp1: b.tp1, tp2: b.tp2, tp3: b.tp3, triggered: b.triggered });
           const fx = (x) => (x == null ? '—' : x.toFixed(s.digits));
-          const sent = await notify(fetchFn, topic, 'ENTRADA ' + b.dir.toUpperCase() + ' ' + asset.name + ' (score ' + b.score + ')',
+          const sent = await notify(fetchFn, topic, (b.asia ? 'ÁSIA (não validado) ' : '') + 'ENTRADA ' + b.dir.toUpperCase() + ' ' + asset.name + ' (score ' + b.score + ')',
             [b.dir.toUpperCase() + ' ' + asset.name + ' @ ' + fx(b.entry) + (asset.proxy ? ' (' + asset.td + ')' : ''),
               'SL ' + fx(b.sl) + ' | TP1 ' + fx(b.tp1) + ' | TP3 ' + fx(b.tp3), b.name].join('\n'),
             SITE + '#' + asset.name);

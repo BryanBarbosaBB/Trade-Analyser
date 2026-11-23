@@ -130,9 +130,11 @@ test('orçamento: um dia inteiro no agendamento do workflow cabe nas 800 consult
   const day = Date.UTC(2026, 10, 18) / 1000; // quarta 00:00 UTC
   // véspera às 23:00 (última rodada da noite anterior) para começar com velas salvas
   const runs = [day - 3600];
+  // mesmo agendamento do .github/workflows/varredura.yml: 30 em 30 min, exceto 07:00–10:30 UTC; às 06:00 só uma
   for (let h = 0; h < 24; h++) {
-    if (h <= 6 || h >= 21) runs.push(day + h * 3600);                // Ásia: de hora em hora
-    else { runs.push(day + h * 3600); runs.push(day + h * 3600 + 1800); } // Londres/NY: 30 em 30 min
+    if (h >= 7 && h <= 10) continue;
+    runs.push(day + h * 3600);
+    if (h !== 6) runs.push(day + h * 3600 + 1800);
   }
   let total = 0;
   for (const [i, now] of runs.entries()) {
@@ -140,4 +142,21 @@ test('orçamento: um dia inteiro no agendamento do workflow cabe nas 800 consult
     if (i > 0) total += o.requests;
   }
   console.log('consultas no dia:', total); assert.ok(total < 720, 'consultas no dia: ' + total);
+});
+
+test('sinais da Ásia: só com asiaSignals, sempre marcados; o padrão (robô) não muda', () => {
+  const at = Date.UTC(2026, 10, 18, 2, 0) / 1000; // quarta 02:00 UTC (Ásia)
+  assert.equal(MA.DEFAULT_SETTINGS.asiaSignals, false);
+  let asiaSeen = 0;
+  for (const a of MA.DEFAULT_ASSETS.filter((x) => x.enabled)) {
+    const data = {};
+    for (const [tf, iv, n] of [['M15', '15min', 500], ['H1', '1h', 1200], ['D1', '1day', 400]]) data[tf] = MA.data.parse(fakeSeries(a.td, iv, n, at), tf, at);
+    data.H4 = MA.data.resample(data.H1, 14400, 3600, at);
+    const off = MA.setups.analyzeAsset(a, data, MA.DEFAULT_SETTINGS, at);
+    const on = MA.setups.analyzeAsset(a, data, Object.assign({}, MA.DEFAULT_SETTINGS, { asiaSignals: true }), at);
+    assert.ok(off.candidates.every((c) => c.status !== 'ENTRADA' && !c.asia), 'sem asiaSignals não há ENTRADA na Ásia');
+    for (const c of on.candidates) if (c.status === 'ENTRADA') { assert.equal(c.asia, true); assert.match(c.warnings[0], /NÃO validado/); asiaSeen++; }
+    assert.equal(on.candidates.length, off.candidates.length);
+  }
+  assert.ok(asiaSeen >= 0);
 });

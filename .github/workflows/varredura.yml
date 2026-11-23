@@ -1,16 +1,17 @@
-# Varredura automática, do domingo 21:00 UTC (abertura do forex) até sexta 20:30 UTC:
-#   - a cada 30 min das 07:00 às 20:30 UTC (04:00–17:30 Brasília), Londres/NY, quando o motor pode dar ENTRADA;
-#   - de hora em hora das 21:00 às 06:00 UTC (18:00–03:00 Brasília), sessão da Ásia: só atualiza o painel
-#     (o backtest não aprovou ENTRADA na Ásia). De hora em hora para caber nas 800 consultas/dia da Twelve Data.
+# Varredura automática a cada 30 min, do domingo à noite até sexta (horários em UTC; Brasília = UTC−3):
+#   - 11:00–20:30 UTC = 08:00–17:30 Brasília (Londres/NY);
+#   - 21:00–06:00 UTC = 18:00–03:00 Brasília (Ásia: sinais marcados como "não validados").
+#   Nada roda entre 03:00 e 08:00 de Brasília. ~650 consultas/dia (limite grátis da Twelve Data: 800).
 # Resultado salvo no ramo `dados` (um único commit, substituído a cada rodada). O site lê de lá.
 # Secrets (Settings → Secrets and variables → Actions): TD_KEY (obrigatório) e NTFY_TOPIC.
 name: Varredura
 
 on:
   schedule:
-    - cron: '0,30 7-20 * * 1-5'
-    - cron: '0 21-23 * * 0-4'
-    - cron: '0 0-6 * * 1-5'
+    - cron: '0,30 11-20 * * 1-5'
+    - cron: '0,30 21-23 * * 0-4'
+    - cron: '0,30 0-5 * * 1-5'
+    - cron: '0 6 * * 1-5'
   workflow_dispatch: {}
 
 permissions:

@@ -11,12 +11,13 @@ resistências, entrada, SL e TP. Embaixo do painel fica o **histórico de sinais
 ## Varredura automática (GitHub Actions)
 | Item | Como é |
 |---|---|
-| Quando roda | Do domingo à noite (abertura do forex) até sexta: **a cada 30 min das 04:00 às 17:30** de Brasília (Londres/NY, quando o motor pode dar ENTRADA) e **de hora em hora das 18:00 às 03:00** (sessão da Ásia: só atualiza o painel; o backtest não aprovou ENTRADA na Ásia, porque perdeu no treino −0,20R e ganhou no teste +0,15R). |
+| Quando roda | A cada 30 min, do domingo à noite até sexta, das **08:00 às 03:00** de Brasília (nada entre 03:00 e 08:00). |
+| Ásia | Das 21:00 às 03:00 de Brasília, a sessão da Ásia também gera ENTRADA e notificação, marcada **"ÁSIA (não validado)"**: no backtest MT5 ela perdeu no treino (−0,20R/trade) e ganhou no teste (+0,15R). Só a varredura e o site usam isso (`asiaSignals`); o robô MT5 continua só em Londres/NY. |
 | Arquivo | `.github/workflows/varredura.yml` → `node scripts/scan.js` |
 | Onde salva | Ramo **`dados`** do repositório: `scan.json` (resumo, histórico e controle de alertas) e `velas/<ATIVO>.json`. Cada rodada substitui o commit anterior, então o ramo não cresce. |
 | O site | Lê o commit mais novo do ramo `dados` e, ao abrir um ativo, refaz a análise com as velas salvas (mesmo resultado da varredura). Atualiza sozinho a cada 5 min. |
 | Alertas | Um por ENTRADA. O mesmo ativo/setup/direção só avisa de novo depois de 4 h. A notificação abre o site direto no ativo. |
-| Consultas | Só busca as velas que podem ter mudado (M15 a cada rodada, H1 a cada hora, D1 uma vez por dia); QQQ/DIA só no pregão americano. Cerca de 680 por dia (teste `orçamento` em `tests/scan.test.js`), abaixo do limite grátis de 800. Cada *Run workflow* manual gasta até 36 a mais. |
+| Consultas | Só busca as velas que podem ter mudado (M15 a cada rodada, H1 a cada hora, D1 uma vez por dia); QQQ/DIA só no pregão americano. Cerca de 650 por dia (teste `orçamento` em `tests/scan.test.js`), abaixo do limite grátis de 800. Cada *Run workflow* manual gasta até 36 a mais. |
 
 ### Configurar (uma vez)
 No GitHub: **repositório → Settings → Secrets and variables → Actions → New repository secret**:
@@ -73,6 +74,6 @@ Leitura: no período longo, a regra nos 12 ativos fica no zero a zero. O resulta
 
 ## Testes
 ```
-node --test tests/engine.test.js tests/scan.test.js   # motor + varredura automática (27 testes)
+node --test tests/engine.test.js tests/scan.test.js   # motor + varredura automática (28 testes)
 node scripts/smoke.js SUA_CHAVE XAUUSD  # análise com dados reais no terminal
 ```

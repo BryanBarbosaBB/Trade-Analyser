@@ -8,9 +8,10 @@
 
   const REPO = 'BryanBarbosaBB/Trade-Analyser', BRANCH = 'dados';
   const RELOAD_MS = 5 * 60 * 1000;
-  const SCHEDULE = 'automática: a cada 30 min das 04:00 às 17:30 e de hora em hora das 18:00 às 03:00 (Brasília), de domingo à noite até sexta';
+  const SCHEDULE = 'automática a cada 30 min, das 08:00 às 03:00 de Brasília, de domingo à noite até sexta';
 
   const settings = structuredClone(MA.DEFAULT_SETTINGS);
+  settings.asiaSignals = true; // igual à varredura (scripts/scan.js)
   const state = { scan: null, ref: BRANCH, full: {}, errors: {}, current: null, tf: 'M15', userPlan: null, loading: false };
   const assetBy = (name) => settings.assets.find((a) => a.name === name);
   const fmt = (x, d) => (x == null || Number.isNaN(x) ? '—' : Number(x).toFixed(d));
@@ -93,7 +94,7 @@
         '<div class="c-arrows arrows">' + ['D1', 'H4', 'H1', 'M15'].map((k) => arrow(r.bias[k])).join('') + '</div>' +
         '<div class="c-setup setup-txt">' + setup + (e ? '<small class="err">' + esc(e) + '</small>' : '') + '</div>' +
         '<div class="c-score score">' + r.score + '<span class="bar"><i style="width:' + r.score + '%"></i></span></div>' +
-        '<div class="c-status">' + badge(r.status) + '</div>' +
+        '<div class="c-status">' + badge(r.status) + (b && b.asia ? ' <small class="warn-txt">Ásia</small>' : '') + '</div>' +
         '<div class="c-time time">' + MA.chart.fmtTime(r.updated + MA.data.TF_SEC.M15) + (r.stale ? ' <span class="err">(antigo)</span>' : '') + '</div></div>';
     }).join('');
   }
@@ -102,10 +103,10 @@
     const h = (state.scan && state.scan.history) || [];
     $('history').innerHTML = '<h2>Sinais de ENTRADA (histórico)</h2>' + (h.length
       ? '<div class="hist-wrap"><table><tr><th>Quando</th><th>Ativo</th><th>Direção</th><th>Setup</th><th class="num">Score</th><th>Entrada</th><th>SL</th><th>TP1</th><th>TP3</th></tr>' +
-        h.map((x) => '<tr class="hist-row" data-asset="' + esc(x.asset) + '"><td>' + when(x.t) + '</td><td><b>' + esc(x.asset) + '</b></td><td class="' + (x.dir === 'compra' ? 'up' : 'down') + '">' + esc(x.dir) +
+        h.map((x) => '<tr class="hist-row" data-asset="' + esc(x.asset) + '"><td>' + when(x.t) + '</td><td><b>' + esc(x.asset) + '</b>' + (x.asia ? ' <small class="warn-txt">Ásia</small>' : '') + '</td><td class="' + (x.dir === 'compra' ? 'up' : 'down') + '">' + esc(x.dir) +
           '</td><td>' + esc(x.setup) + '</td><td class="num">' + x.score + '</td><td>' + fmt(x.entry, x.digits) + '</td><td class="down">' + fmt(x.sl, x.digits) +
           '</td><td class="up">' + fmt(x.tp1, x.digits) + '</td><td class="up">' + fmt(x.tp3, x.digits) + '</td></tr>').join('') + '</table></div>' +
-        '<p class="muted">Cada sinal gera uma notificação no celular (app ntfy). O mesmo ativo/setup/direção só avisa de novo depois de 4 h. ENTRADA só acontece em Londres/NY (04:00–18:00 de Brasília); à noite (Ásia) o painel é atualizado, mas o backtest não aprovou entradas nesse horário.</p>'
+        '<p class="muted">Cada sinal gera uma notificação no celular (app ntfy). O mesmo ativo/setup/direção só avisa de novo depois de 4 h. Sinais marcados <span class="warn-txt">Ásia</span> (noite) <b>não foram validados</b> no backtest: perderam no treino (−0,20R por trade).</p>'
       : '<p class="muted">Nenhum sinal de ENTRADA ainda. Quando aparecer, ele fica guardado aqui e chega no celular.</p>');
   }
 

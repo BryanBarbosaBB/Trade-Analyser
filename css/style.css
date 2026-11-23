@@ -90,6 +90,7 @@ ul.tight li { margin: 2px 0; }
 .calc-form { display: grid; grid-template-columns: 1fr 1fr auto; gap: 8px; align-items: end; }
 .calc-form label { margin: 0; }
 .hist-wrap { overflow-x: auto; }
+.warn-txt { color: var(--warn); font-weight: 600; }
 .hist-wrap table { min-width: 560px; }
 #history { margin-top: 16px; }
 

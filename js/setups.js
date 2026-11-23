@@ -188,21 +188,27 @@
     const blocks = [];
     // backtest (46 dias, 12 ativos): sem D1 e H4 a favor, os gatilhos tiveram resultado médio negativo
     if (setup.align.pts < 30) blocks.push('D1 e H4 não estão os dois a favor da operação');
-    if (!session.good) blocks.push('fora das sessões de Londres/Nova York (' + session.label + ')');
+    // Sinais da Ásia (opcional, settings.asiaSignals): só no painel/alertas da varredura, nunca no robô.
+    // Backtest MT5 (mesmas travas, TP3): treino −0,20R/trade, teste +0,15R → NÃO validado.
+    const asia = !!settings.asiaSignals && !session.good && session.active.includes('Ásia');
+    if (!session.good && !asia) blocks.push('fora das sessões de Londres/Nova York (' + session.label + ')');
     if (plan.rrNext < 1) blocks.push('o próximo nível contrário está a só ' + plan.rrNext.toFixed(2) + 'R (o risco é maior que o caminho livre)');
     if (strong.length) blocks.push((setup.dir === 'venda' ? 'suporte' : 'resistência') + ' forte (' + strong[0].desc + ') a ' + strong[0].r.toFixed(2) + 'R da entrada');
     let status = 'SEM SETUP';
-    if (setup.triggered && score >= sc.entryMin && !blocks.length) status = 'ENTRADA';
+    // na Ásia a sessão vale como se fosse Londres/NY para o score mínimo (igual ao teste do backtest)
+    const entryScore = asia ? score + 10 - ses.pts : score;
+    if (setup.triggered && entryScore >= sc.entryMin && !blocks.length) status = 'ENTRADA';
     else if (score >= sc.watchMin || setup.area.distAtr <= 1.5) status = 'OBSERVAR';
     if (setup.align.pts === 0 && status !== 'SEM SETUP' && score < sc.watchMin) status = 'SEM SETUP';
     const size = MA.risk.positionSize({ entry: plan.entry, sl: plan.sl, pip: asset.pip, pipValue: asset.pipValue, accountSize: settings.accountSize, riskPct: settings.riskPct });
     const warnings = [...plan.notes];
     if (setup.triggered && blocks.length) warnings.unshift('Gatilho ocorreu, mas ENTRADA bloqueada: ' + blocks.join('; ') + '.');
+    if (asia && status === 'ENTRADA') warnings.unshift('Sinal da sessão da Ásia: NÃO validado no backtest (perdeu no treino, −0,20R por trade). Use com cautela.');
     if (ses.pts === 0) warnings.push(ses.text);
     if (vol.pts === 0) warnings.push(vol.text);
     if (plan.rrNext < 1.5) warnings.push('Pouco espaço até o próximo nível contrário (R:R ' + plan.rrNext.toFixed(2) + ').');
     return {
-      ...setup, entry, plan, size, score, breakdown, status,
+      ...setup, entry, plan, size, score, breakdown, status, asia: asia && status === 'ENTRADA',
       confirmations: setup.conf.concat(mom.txt, vol.pts > 0 ? [vol.text] : [], ses.pts > 0 ? [ses.text] : []),
       warnings,
     };
