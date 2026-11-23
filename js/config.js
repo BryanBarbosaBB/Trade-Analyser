@@ -31,7 +31,7 @@
     riskPct: 1,
     risk: { slBufferAtr: 0.2, slMinAtr: 0.8, slMaxAtr: 2.5, tp2MinRR: 1.5, tp3RR: 3 },
     score: { entryMin: 75, watchMin: 55 },
-    asiaSignals: false, // true só na varredura/site: ENTRADA também na Ásia (não validada). O robô MT5 usa false.
+    asiaSignals: false, // true na varredura/site: ENTRADA também na Ásia (não validada). Backtests usam false.
     indicators: { emaFast: 50, emaSlow: 200, rsi: 14, atr: 14, adx: 14, macd: [12, 26, 9] },
     candles: { M15: 500, H1: 1200, D1: 400 }, // H4 é montado a partir do H1 (1200 H1 ≈ 300 H4)
     assets: MA.DEFAULT_ASSETS,

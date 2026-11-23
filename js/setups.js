@@ -188,7 +188,7 @@
     const blocks = [];
     // backtest (46 dias, 12 ativos): sem D1 e H4 a favor, os gatilhos tiveram resultado médio negativo
     if (setup.align.pts < 30) blocks.push('D1 e H4 não estão os dois a favor da operação');
-    // Sinais da Ásia (opcional, settings.asiaSignals): só no painel/alertas da varredura, nunca no robô.
+    // Sinais da Ásia (opcional, settings.asiaSignals): usado pela varredura e pelo site.
     // Backtest MT5 (mesmas travas, TP3): treino −0,20R/trade, teste +0,15R → NÃO validado.
     const asia = !!settings.asiaSignals && !session.good && session.active.includes('Ásia');
     if (!session.good && !asia) blocks.push('fora das sessões de Londres/Nova York (' + session.label + ')');

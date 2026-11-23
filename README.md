@@ -12,7 +12,7 @@ resistências, entrada, SL e TP. Embaixo do painel fica o **histórico de sinais
 | Item | Como é |
 |---|---|
 | Quando roda | A cada 30 min, do domingo à noite até sexta, das **08:00 às 03:00** de Brasília (nada entre 03:00 e 08:00). |
-| Ásia | Das 21:00 às 03:00 de Brasília, a sessão da Ásia também gera ENTRADA e notificação, marcada **"ÁSIA (não validado)"**: no backtest MT5 ela perdeu no treino (−0,20R/trade) e ganhou no teste (+0,15R). Só a varredura e o site usam isso (`asiaSignals`); o robô MT5 continua só em Londres/NY. |
+| Ásia | Das 21:00 às 03:00 de Brasília, a sessão da Ásia também gera ENTRADA e notificação, marcada **"ÁSIA (não validado)"**: no backtest MT5 ela perdeu no treino (−0,20R/trade) e ganhou no teste (+0,15R). Ligado por `asiaSignals` (scripts/scan.js e js/app.js). |
 | Arquivo | `.github/workflows/varredura.yml` → `node scripts/scan.js` |
 | Onde salva | Ramo **`dados`** do repositório: `scan.json` (resumo, histórico e controle de alertas) e `velas/<ATIVO>.json`. Cada rodada substitui o commit anterior, então o ramo não cresce. |
 | O site | Lê o commit mais novo do ramo `dados` e, ao abrir um ativo, refaz a análise com as velas salvas (mesmo resultado da varredura). Atualiza sozinho a cada 5 min. |
@@ -70,7 +70,7 @@ Para rodar: `python scripts/export_mt5.py 3` e depois `node scripts/backtest.js 
 | Regra atual (ENTRADA), 12 ativos, TP3 | 565 | 30% | −0,01R | −4,9R | 46,5R |
 | Regra atual só em XAUUSD, NAS100, US30, EURJPY, EURUSD: **teste 2025-26** (ativos escolhidos só com 2023-24) | 150 | 32% | **+0,16R** | +24,4R | 20,4R |
 
-Leitura: no período longo, a regra nos 12 ativos fica no zero a zero. O resultado positivo dos 46 dias foi do momento. Escolhendo os ativos com dados antigos e testando no período novo sobra uma vantagem pequena (+0,16R), que ainda pode ser sorte estatística, com quedas de até 20R. O robô opera só esses 5 ativos.
+Leitura: no período longo, a regra nos 12 ativos fica no zero a zero. O resultado positivo dos 46 dias foi do momento. Escolhendo os ativos com dados antigos e testando no período novo sobra uma vantagem pequena (+0,16R), que ainda pode ser sorte estatística, com quedas de até 20R.
 
 ## Testes
 ```

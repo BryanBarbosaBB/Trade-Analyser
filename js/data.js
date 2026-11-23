@@ -118,57 +118,14 @@
     return candles;
   }
 
-  /* Ponte local do robô (bot/mt5_feed.py): velas direto do MT5, sem limite por minuto.
-     Se não responder, desliga por 60 s e o site usa a Twelve Data. */
-  const FEED = 'http://127.0.0.1:8765';
-  let feedDownUntil = 0;
-  async function fromFeed(asset, timeoutMs = 4000) {
-    if (Date.now() < feedDownUntil) return null;
-    const ctrl = new AbortController(), timer = setTimeout(() => ctrl.abort(), timeoutMs);
-    try {
-      const res = await fetch(FEED + '/candles?asset=' + encodeURIComponent(asset.name), { signal: ctrl.signal, cache: 'no-store' });
-      const json = await res.json();
-      if (!json.ok) return null; // ativo que a corretora não tem: tenta a Twelve Data
-      return json.data;
-    } catch (e) {
-      feedDownUntil = Date.now() + 60000;
-      return null;
-    } finally { clearTimeout(timer); }
-  }
-
-  /* Permissão do Chrome para o site falar com o 127.0.0.1 ("acesso à rede local"):
-     'granted', 'denied', 'prompt' ou 'unknown' (navegador sem essa permissão). */
-  async function feedPermission() {
-    try { return (await navigator.permissions.query({ name: 'local-network-access' })).state; } catch (e) { return 'unknown'; }
-  }
-
-  /* Liga a ponte no início da varredura. Se o Chrome ainda vai perguntar, espera até 15 s
-     para a pessoa clicar em "Permitir". Negada: nem tenta (evita atraso). */
-  async function connectFeed(onAsk) {
-    feedDownUntil = 0;
-    const perm = await feedPermission();
-    if (perm === 'denied') return { on: false, perm };
-    if (perm === 'prompt' && onAsk) onAsk();
-    const on = !!(await fromFeed({ name: 'EURUSD' }, perm === 'prompt' ? 15000 : 4000));
-    return { on, perm: on ? 'granted' : await feedPermission() };
-  }
-
   /* fetch com tempo limite: uma requisição presa não trava a varredura. */
   async function fetchJson(url, ms = 20000) {
     const ctrl = new AbortController(), timer = setTimeout(() => ctrl.abort(), ms);
     try { return await (await fetch(url, { signal: ctrl.signal })).json(); } finally { clearTimeout(timer); }
   }
 
-  /* Busca M15, H1, D1 e monta H4 a partir do H1. Primeiro tenta o MT5 (ponte local);
-     senão, Twelve Data: 3 requisições por ativo (ou 0, se em cache). */
+  /* Busca M15, H1, D1 na Twelve Data e monta H4 a partir do H1 (usado pelo backtest e pelo smoke.js). */
   async function getAll(asset, settings, onWait, force, cacheOnly) {
-    if (!cacheOnly) {
-      const f = await fromFeed(asset);
-      if (f) {
-        const H4 = resample(f.H1, TF_SEC.H4, TF_SEC.H1);
-        return { M15: f.M15, H1: f.H1, H4, D1: f.D1, source: 'MT5' };
-      }
-    }
     const key = settings.tdKey;
     const sz = settings.candles;
     const o = (size) => ({ key, size, onWait, force, cacheOnly });
@@ -179,5 +136,5 @@
     return { M15, H1, H4, D1, source: 'Twelve Data' };
   }
 
-  MA.data = { parse, resample, isFresh, getAll, fromFeed, connectFeed, clearCache, TF_SEC };
+  MA.data = { parse, resample, isFresh, getAll, clearCache, TF_SEC };
 })(globalThis.MA = globalThis.MA || {});
