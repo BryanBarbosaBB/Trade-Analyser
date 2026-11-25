@@ -165,13 +165,12 @@
   function missingFor(setup, ctx, asset, entryScore, entryMin, blocks) {
     const out = [], d = asset.digits, f = (x) => x.toFixed(d), buy = setup.dir === 'compra';
     if (!setup.triggered) {
-      const dist = Math.abs(ctx.price - setup.entryWatch) / asset.pip;
-      const far = ' (agora ' + f(ctx.price) + ', a ' + dist.toFixed(1) + (asset.proxy ? ' pontos)' : ' pips)');
+      const far = ' (faltam ' + (Math.abs(ctx.price - setup.entryWatch) / asset.pip).toFixed(1) + (asset.proxy ? ' pontos)' : ' pips)');
+      const vela = 'vela M15 de ' + (buy ? 'alta fechar acima de ' : 'baixa fechar abaixo de ') + f(setup.entryWatch);
       if (setup.name.startsWith('Pullback')) {
         if (!setup.inArea) out.push('preço ' + (buy ? 'cair' : 'subir') + ' até ' + f(setup.entryWatch) + far);
         if (!setup.rsiOk) out.push('RSI M15 sair de ' + (buy ? 'sobrevenda (<30)' : 'sobrecompra (>70)'));
-      } else if (!setup.inArea) out.push('preço voltar até ' + f(setup.entryWatch) + ' para o reteste' + far);
-      else out.push('vela M15 de ' + (buy ? 'alta fechar acima de ' : 'baixa fechar abaixo de ') + f(setup.entryWatch));
+      } else out.push(setup.inArea ? vela : 'preço ' + (buy ? 'cair' : 'subir') + ' até ' + f(setup.entryWatch) + far + ' e, depois disso, ' + vela);
     }
     if (entryScore < entryMin) out.push('score ' + entryScore + ' (mínimo ' + entryMin + ')');
     return out.concat(blocks);

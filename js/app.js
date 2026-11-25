@@ -50,18 +50,24 @@
   const LOCAL = new URLSearchParams(location.search).get('dados');
   const rawUrl = (ref, file) => (LOCAL ? LOCAL.replace(/\/$/, '') + '/' : 'https://raw.githubusercontent.com/' + REPO + '/' + ref + '/') + file;
 
-  async function load(quiet) {
+  /* id = pedido que a nuvem acabou de atender: ela guarda uma cópia em p/<id>/, um endereço nunca visto, sem cache nem limite da API. */
+  async function load(quiet, id) {
     if (state.loading) return;
     state.loading = true; $('btn-reload').disabled = true;
     if (quiet !== true) setStatus('Carregando a última varredura…');
     try {
-      const ref = LOCAL ? 'local' : await latestRef();
-      const scan = await getJson(rawUrl(ref, 'scan.json'));
+      let ref = LOCAL ? 'local' : null, scan = null;
+      if (id && !LOCAL) {
+        try { scan = await getJson(rawUrl(BRANCH + '/p/' + id, 'scan.json')); ref = BRANCH + '/p/' + id; } catch (e) { /* cai no caminho normal */ }
+      }
+      if (!scan) { ref = ref || await latestRef(); scan = await getJson(rawUrl(ref, 'scan.json')); }
+      // cache atrasado do GitHub: nunca troca por uma varredura mais velha que a da tela
+      if (state.scan && scan.t < state.scan.t) { state.loading = false; $('btn-reload').disabled = false; statusLine(); return; }
       if (!state.scan || scan.t !== state.scan.t) {
         state.full = {}; state.errors = {}; if (!state.scanning) state.note = '';
       }
       state.scan = scan; state.ref = ref;
-      try { state.ia = await getJson(rawUrl(ref, 'ia.json')); } catch (e) { /* ainda sem leitura da IA */ }
+      try { state.ia = novaIA(state.ia, await getJson(rawUrl(ref, 'ia.json'))); } catch (e) { /* ainda sem leitura da IA */ }
       renderList(); renderHistory(); statusLine(); renderRank();
       if (state.current && !$('v-detalhe').classList.contains('hidden')) await openAsset(state.current, true);
     } catch (e) {
@@ -80,7 +86,7 @@
   const PEDIDOS = 'trade-analyser-pedidos-k7q2xw', STATUS = 'trade-analyser-status-k7q2xw'; // iguais em scripts/comandos.js
   const DESISTE_MS = 12 * 60 * 1000;
 
-  /* Envia o pedido e espera a nuvem terminar. progress(texto) mostra o andamento. Devolve o texto final ou lança erro. */
+  /* Envia o pedido e espera a nuvem terminar. progress(texto) mostra o andamento. Devolve {txt, id} ou lança erro. */
   function pedir(texto, progress) {
     return new Promise((resolve, reject) => {
       const desde = Math.floor(Date.now() / 1000) - 5, fila = [];
@@ -91,7 +97,7 @@
         if (id == null) { fila.push(m); return; }
         if (!m || m.id !== id) return;
         if (m.st === 'recebido') { timers.forEach(clearTimeout); timers = [timers[0]]; progress('A nuvem está executando…'); }
-        else if (m.st === 'pronto') fim(resolve, m.txt || '');
+        else if (m.st === 'pronto') fim(resolve, { txt: m.txt || '', id: /^[A-Za-z0-9]{1,20}$/.test(id) ? id : null });
         else if (m.st === 'negado' || m.st === 'erro') fim(reject, new Error(m.txt || 'falhou'));
       };
       es.onmessage = (e) => { try { ver(JSON.parse(JSON.parse(e.data).message)); } catch (x) { /* mensagem de outro formato */ } };
@@ -106,9 +112,9 @@
   }
 
   /* Recarrega até aparecer o resultado novo (o GitHub pode demorar a servir o commit novo). */
-  async function recarrega(pronto) {
+  async function recarrega(pronto, id) {
     for (let i = 0; i < 20; i++) {
-      await load(true);
+      await load(true, i < 3 ? id : null);
       if (pronto()) return true;
       await new Promise((r) => setTimeout(r, i < 3 ? 4000 : 20000));
     }
@@ -121,11 +127,11 @@
     state.scanning = true; scanButtons();
     const show = (t) => { state.note = t; statusLine(); };
     try {
-      const txt = await pedir('varrer', (t) => show('Varredura: ' + t + (t.includes('executando') ? ' (leva de 1 a 4 min)' : '')));
+      const { txt, id } = await pedir('varrer', (t) => show('Varredura: ' + t + (t.includes('executando') ? ' (leva de 1 a 4 min)' : '')));
       if (txt) { await load(true); show(txt); }
       else {
         show('Varredura pronta, carregando…');
-        const ok = await recarrega(() => state.scan && state.scan.t > antes);
+        const ok = await recarrega(() => state.scan && state.scan.t > antes, id);
         const entr = ok ? state.scan.assets.filter((a) => a.status === 'ENTRADA').map((a) => a.name) : [];
         const ses = MA.an.sessions();
         show(!ok ? 'A varredura terminou, mas o GitHub ainda não entregou os dados novos. Clique em Atualizar em alguns minutos.'
@@ -142,6 +148,13 @@
   }
 
   // ---------------- IA (Gemini, roda na nuvem; resultado em ia.json) ----------------
+  /* Junta as leituras da IA ficando com a mais nova de cada uma (o cache do GitHub pode entregar um arquivo antigo). */
+  function novaIA(a, b) {
+    if (!a || !b) return b || a;
+    const maior = (x, y) => (!x || (y && y.t >= x.t) ? y || x : x), at = { ...a.ativos, ...b.ativos };
+    for (const k in at) at[k] = maior((a.ativos || {})[k], (b.ativos || {})[k]);
+    return { ...b, rank: maior(a.rank, b.rank), ativos: at };
+  }
   const iaDe = (alvo) => (state.ia ? (alvo === 'rank' ? state.ia.rank : (state.ia.ativos || {})[alvo]) : null);
   const iaQuando = (x) => '<p class="muted">Feita às ' + when(x.t) + ' sobre a varredura de ' + when(x.scan) +
     (state.scan && x.scan < state.scan.t ? ' <span class="warn-txt">(já há varredura mais nova)</span>' : '') + '</p>';
@@ -152,10 +165,10 @@
     const show = (t) => { state.aiBusy[alvo] = t; renderIA(alvo); };
     delete state.aiErr[alvo];
     try {
-      const txt = await pedir(alvo === 'rank' ? 'ia' : 'ia:' + alvo, (t) => show('IA: ' + t));
+      const { txt, id } = await pedir(alvo === 'rank' ? 'ia' : 'ia:' + alvo, (t) => show('IA: ' + t));
       show('IA: resposta pronta, carregando…');
       if (txt) await load(true);
-      else if (!(await recarrega(() => ((iaDe(alvo) || {}).t || 0) > antes))) throw new Error('A IA respondeu, mas o GitHub ainda não entregou. Clique em Atualizar em alguns minutos.');
+      else if (!(await recarrega(() => ((iaDe(alvo) || {}).t || 0) > antes, id))) throw new Error('A IA respondeu, mas o GitHub ainda não entregou. Clique em Atualizar em alguns minutos.');
     } catch (e) { state.aiErr[alvo] = e.message; }
     delete state.aiBusy[alvo];
     renderIA(alvo);
@@ -213,7 +226,7 @@
     $('list').innerHTML = rows.map((r) => {
       const b = r.best, e = errs[r.name];
       const setup = b ? esc(b.name) + ' — <b class="' + (b.dir === 'compra' ? 'up' : 'down') + '">' + b.dir + '</b><small>' +
-        (b.status !== 'ENTRADA' && b.missing && b.missing.length ? '<b>Falta:</b> ' + b.missing.map(esc).join(' · ')
+        (b.status !== 'ENTRADA' && b.missing && b.missing.length ? '<b class="no-entry">NÃO ENTRAR.</b> <b>Falta:</b> ' + b.missing.map(esc).join(' · ') + ' · <b>preço atual ' + fmt(r.price, r.digits) + '</b>'
           : b.triggered ? 'Gatilho confirmado' : 'Área a ' + fmt(b.distAtr, 1) + ' ATR(H1)') + '</small>' : '<span class="muted">Nenhum setup</span>';
       return '<div class="row" data-asset="' + esc(r.name) + '">' +
         '<div class="c-name"><div class="name">' + esc(r.name) + '</div><div class="price">' + fmt(r.price, r.digits) + (r.proxy ? ' · ' + esc(r.td) : '') + '</div></div>' +
@@ -292,7 +305,7 @@
       const p = b.plan, pips = (x) => fmt(Math.abs(x - p.entry) / asset.pip, 1);
       $('c-setup').innerHTML = '<h2>' + esc(b.name) + ' — <span class="' + (b.dir === 'compra' ? 'up' : 'down') + '">' + b.dir + '</span> ' + badge(b.status) + '</h2>' +
         '<p class="muted">' + (b.triggered ? 'Gatilho confirmado na varredura (entrada a mercado).' : 'Ainda sem gatilho: não é sinal. Plano abaixo só para acompanhar (no backtest, ordem limite na área sem esperar o gatilho não deu lucro).') + '</p>' +
-        (b.missing.length ? '<div class="missing"><b>Falta para ENTRADA:</b><ul class="tight">' + b.missing.map((x) => '<li>' + esc(x) + '</li>').join('') + '</ul>' +
+        (b.missing.length ? '<div class="missing"><b class="no-entry">NÃO ENTRAR AINDA</b> · preço atual ' + fmt(r.price, d) + '<br><b>Falta para ENTRADA:</b><ul class="tight">' + b.missing.map((x) => '<li>' + esc(x) + '</li>').join('') + '</ul>' +
           (b.triggered ? '' : '<small>O score ' + b.score + ' supõe a entrada em ' + fmt(p.entry, d) + ', não no preço atual.</small>') + '</div>' : '') +
         '<table><tr><th></th><th>Preço</th><th class="num">pips</th><th class="num">R:R</th></tr>' +
         '<tr><td>Entrada</td><td>' + fmt(p.entry, d) + '</td><td></td><td></td></tr>' +

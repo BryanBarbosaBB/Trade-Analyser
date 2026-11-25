@@ -72,6 +72,16 @@ async function avisa(fetchFn, id, st, txt) {
   try { await fetchFn('https://ntfy.sh/' + STATUS, { method: 'POST', body: JSON.stringify({ id, st, txt: limpa(txt) }) }); } catch (e) { /* o site desiste sozinho */ }
 }
 
+/* Cópia do resultado em p/<id do pedido>/ (só a última): o site lê de um endereço que nunca esteve em cache, na hora. */
+function copia(dir, id) {
+  const p = path.join(dir, 'p');
+  fs.rmSync(p, { recursive: true, force: true });
+  if (typeof id !== 'string' || !/^[A-Za-z0-9]{1,20}$/.test(id)) return;
+  const para = path.join(p, id);
+  fs.mkdirSync(para, { recursive: true });
+  for (const f of ['scan.json', 'ia.json', 'velas']) if (fs.existsSync(path.join(dir, f))) fs.cpSync(path.join(dir, f), path.join(para, f), { recursive: true });
+}
+
 /* Executa um pedido. deps = {baixa, salva, varre, ia} (trocáveis nos testes). */
 async function atende(msg, { dir, now, fetchFn, deps, log = console.log }) {
   const p = parsePedido(msg.message);
@@ -85,6 +95,7 @@ async function atende(msg, { dir, now, fetchFn, deps, log = console.log }) {
   try {
     await deps.baixa(); // pega o que outra rodada possa ter salvo
     if (p.tipo === 'varrer') await deps.varre(); else await deps.ia(p.alvo);
+    copia(dir, msg.id);
     await deps.salva();
     await avisa(fetchFn, msg.id, 'pronto');
   } catch (e) {
@@ -126,7 +137,7 @@ async function escuta({ dir, segundos, fetchFn = fetch, deps, log = console.log 
   }
 }
 
-module.exports = { limpa, parsePedido, decide, atende, escuta, gastoHoje, PEDIDOS, STATUS, IA_DIA, COTA };
+module.exports = { copia, limpa, parsePedido, decide, atende, escuta, gastoHoje, PEDIDOS, STATUS, IA_DIA, COTA };
 
 if (require.main === module) {
   const [dir, seg] = process.argv.slice(2), aqui = (f) => path.join(__dirname, f);

@@ -322,3 +322,27 @@ test('pedidos: segredo nunca sai no aviso público', () => {
   const s = C.limpa("fatal: unable to access 'https://x-access-token:ghs_abc@github.com/a/b.git/': segredoTD AIzaX topico-privado", env);
   assert.doesNotMatch(s, /ghs_abc|segredoTD|AIzaX|topico-privado|x-access-token/);
 });
+
+test('pedidos: cópia do resultado em p/<id>/, só a última e com id seguro', () => {
+  const fs = require('fs'), path = require('path'), dir = tmp();
+  fs.mkdirSync(path.join(dir, 'velas'));
+  fs.writeFileSync(path.join(dir, 'scan.json'), '{"t":1}'); fs.writeFileSync(path.join(dir, 'velas', 'EURJPY.json'), '{}');
+  C.copia(dir, 'abc123'); C.copia(dir, 'def456');
+  assert.deepEqual(fs.readdirSync(path.join(dir, 'p')), ['def456']);
+  assert.ok(fs.existsSync(path.join(dir, 'p', 'def456', 'velas', 'EURJPY.json')));
+  for (const ruim of ['../x', 'a/b', '', null]) { C.copia(dir, ruim); assert.ok(!fs.existsSync(path.join(dir, 'p')), String(ruim)); }
+});
+
+test('missing: longe do reteste, o texto pede o preço E a vela de confirmação', () => {
+  let vistos = 0;
+  for (const h of [2, 10, 14, 22]) for (const a of MA.DEFAULT_ASSETS.filter((x) => x.enabled)) {
+    const at = Date.UTC(2026, 10, 18, h, 0) / 1000, data = {};
+    for (const [tf, iv, n] of [['M15', '15min', 500], ['H1', '1h', 1200], ['D1', '1day', 400]]) data[tf] = MA.data.parse(fakeSeries(a.td, iv, n, at), tf, at);
+    data.H4 = MA.data.resample(data.H1, 14400, 3600, at);
+    for (const c of MA.setups.analyzeAsset(a, data, MA.DEFAULT_SETTINGS, at).candidates) for (const m of c.missing) {
+      assert.doesNotMatch(m, /agora/);
+      if (c.name.startsWith('Rompimento') && /preço/.test(m)) { vistos++; assert.match(m, /depois disso, vela M15/); }
+    }
+  }
+  console.log('rompimentos longe do reteste:', vistos);
+});

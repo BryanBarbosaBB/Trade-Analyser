@@ -93,6 +93,7 @@ ul.tight li { margin: 2px 0; }
 .warn-txt { color: var(--warn); font-weight: 600; }
 .hist-wrap table { min-width: 560px; }
 #history { margin-top: 16px; }
+.no-entry { color: var(--down, #ef5350); }
 .missing { border-left: 3px solid var(--warn); padding: 4px 10px; margin: 8px 0; }
 
 @media (max-width: 760px) {
