@@ -62,6 +62,7 @@ async function notify(fetchFn, topic, title, message, click) {
 }
 
 const { summarize } = MA.setups;
+const { slotsPassados } = require('./agenda.js');
 
 /* O limite de 8 consultas/min faz a varredura durar até ~3 min: começa por quem está mais perto de uma ENTRADA
    (D1 e H4 alinhados na última varredura, depois maior score), para o aviso dele sair primeiro. */
@@ -143,6 +144,10 @@ async function runScan({ dir, key, topic, fetchFn = fetch, now = Math.floor(Date
   // rearma: sinal avisado que não está mais em ENTRADA num ativo analisado nesta rodada (ativo com erro não rearma)
   for (const k of Object.keys(out.alerted)) if (analyzed.has(k.split('|')[0]) && !active.has(k)) delete out.alerted[k];
   out.history = out.history.slice(0, HISTORY_MAX);
+  // consultas gastas no dia UTC (os botões do site usam só o que sobra da varredura automática)
+  const hoje = new Date(now * 1000).toISOString().slice(0, 10);
+  if (prev.uso && prev.uso.dia === hoje) out.uso = { dia: hoje, n: prev.uso.n + out.requests };
+  else out.uso = { dia: hoje, n: out.requests + (prev.t && !prev.uso ? slotsPassados(now) * 17 : 0) };
   fs.writeFileSync(path.join(dir, 'scan.json'), JSON.stringify(out));
   log('Requisições Twelve Data:', out.requests, '| erros:', Object.keys(out.errors).length);
   return out;

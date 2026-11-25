@@ -23,6 +23,7 @@ resistências, entrada, SL e TP. Embaixo do painel fica o **histórico de sinais
 ### Configurar (uma vez)
 No GitHub: **repositório → Settings → Secrets and variables → Actions → New repository secret**:
 - `TD_KEY`: chave da Twelve Data (https://twelvedata.com/account/api-keys).
+- `GEMINI_KEY`: chave do Gemini, para os botões da IA (https://aistudio.google.com/apikey).
 - `NTFY_TOPIC`: tópico do app ntfy (o mesmo assinado no celular).
 
 Para testar na hora: **Actions → Varredura → Run workflow**. Para testar só a notificação no celular: **Actions → Teste de notificação → Run workflow**.
@@ -34,11 +35,14 @@ Observações:
 - Teste local do site com dados de uma pasta: `python -m http.server 8770` e abra `http://127.0.0.1:8770/?dados=pasta`.
 
 ## Botões manuais do site
+Nenhuma chave fica no site. O botão publica um pedido num tópico do ntfy; a rodada do GitHub Actions que está sempre esperando o próximo horário executa com os secrets e salva no ramo `dados` (`scripts/comandos.js`). Funciona igual em qualquer aparelho.
+
 | Botão | O que faz |
 |---|---|
-| **Varrer agora** / **Varrer este ativo** | Busca as velas novas na Twelve Data e refaz a análise na hora, em qualquer horário, com a mesma regra. Gasta de 0 a 36 consultas da cota de 800/dia (a mesma da nuvem). O resultado aparece marcado "manual", só neste aparelho, e some quando a nuvem varre de novo. Não entra no histórico nem notifica. |
-| **Ranking IA** / **Analisar com IA** | O Gemini comenta os números do motor. Não cria preço nem ENTRADA. |
-| **Chaves** | Guarda as chaves da Twelve Data e do Gemini só no navegador (uma vez por aparelho). *Esquecer* apaga. |
+| **Varrer agora** | Varre os 12 ativos na hora, em qualquer horário. Vale para todos os aparelhos, entra no histórico e notifica ENTRADA. Só usa a cota que sobra da varredura automática (no máximo 790 consultas/dia no total; fim de semana fica livre). |
+| **Ranking IA** / **Analisar com IA** | O Gemini comenta os números do motor (precisa do secret `GEMINI_KEY`). Não cria preço nem ENTRADA. Até 40 por dia. |
+
+Se a nuvem estiver trocando de rodada, o pedido espera na fila até ~5 min. O tópico de pedidos é público: quem ler o código pode pedir uma varredura, mas só dentro desses limites e sem acesso a nada mais.
 
 **Falta:** cada ativo que não é ENTRADA mostra o que ainda falta. O score mede a qualidade da área supondo a entrada nela; score alto sem gatilho não é sinal.
 
@@ -96,6 +100,6 @@ Leitura: nenhuma alternativa deu lucro no treino e no teste ao mesmo tempo. A va
 
 ## Testes
 ```
-node --test tests/engine.test.js tests/scan.test.js   # motor + varredura automática (33 testes)
+node --test tests/engine.test.js tests/scan.test.js   # motor + varredura automática (40 testes)
 node scripts/smoke.js SUA_CHAVE XAUUSD  # análise com dados reais no terminal
 ```

@@ -232,29 +232,93 @@ test('scanOrder: D1/H4 alinhados e score alto primeiro', () => {
   assert.deepEqual(scanOrder(L, undefined).map((a) => a.name), ['A', 'B', 'C', 'D']);
 });
 
-test('varredura manual do site: mesmo resultado da nuvem e só busca o que mudou', async () => {
-  const dir = tmp(), log = { td: [], ntfy: [] }, realFetch = globalThis.fetch;
-  const cloud = await runScan({ dir, key: 'k', topic: '', fetchFn: fakeFetch(log, NOW), now: NOW, throttle: noThrottle, log: quiet });
-  const eur = MA.DEFAULT_ASSETS.find((a) => a.name === 'EURUSD'), st = Object.assign({}, MA.DEFAULT_SETTINGS, { asiaSignals: true });
-  const v = JSON.parse(fs.readFileSync(path.join(dir, 'velas', 'EURUSD.json'), 'utf8'));
-  const un = (a) => a.map(([t, o, h, l, c]) => ({ t, o, h, l, c }));
-  const stored = { M15: un(v.M15), H1: un(v.H1), D1: un(v.D1) };
+test('cota do dia esgotada: erro na hora, sem esperar', async () => {
+  const dir = tmp();
+  const f = async () => ({ json: async () => ({ status: 'error', code: 429, message: 'You have run out of API credits for the day.' }) });
+  const t0 = Date.now();
+  const o = await runScan({ dir, key: 'k', topic: '', fetchFn: f, now: NOW, throttle: noThrottle, log: quiet });
+  assert.equal(o.assets.length, 0);
+  assert.ok(Date.now() - t0 < 5000);
+});
+
+test('contador de consultas do dia', async () => {
+  const dir = tmp(), log = { td: [], ntfy: [] };
+  const run = (now) => runScan({ dir, key: 'k', topic: '', fetchFn: fakeFetch(log, now), now, throttle: noThrottle, log: quiet });
+  const a = await run(NOW), b = await run(NOW + 1800);
+  assert.equal(a.uso.n, a.requests);
+  assert.equal(b.uso.n, a.requests + b.requests);
+  const c = await run(NOW + 86400);
+  assert.equal(c.uso.n, c.requests, 'zera no dia seguinte');
+});
+
+const C = require('../scripts/comandos.js');
+
+test('pedidos: só os três textos conhecidos', () => {
+  assert.deepEqual(C.parsePedido('varrer'), { tipo: 'varrer' });
+  assert.deepEqual(C.parsePedido(' ia '), { tipo: 'ia', alvo: 'rank' });
+  assert.deepEqual(C.parsePedido('ia:EURJPY'), { tipo: 'ia', alvo: 'EURJPY' });
+  for (const x of ['', null, 'ia:XXXXXX', 'ia:../../x', 'ia:EURJPY;ls', 'varrer tudo', 'ia:__proto__', 'ia:rank', {}]) assert.equal(C.parsePedido(x), null, String(x));
+});
+
+test('pedidos: cota reservada para a varredura automática, limites e pedidos velhos', () => {
+  const v = { tipo: 'varrer' }, dia = '2026-11-18', sab = Date.UTC(2026, 10, 21, 15) / 1000;
+  const scan = (n, t = NOW - 600) => ({ t, uso: { dia, n } });
+  assert.equal(C.decide(v, NOW - 5, NOW, scan(370), {}).acao, 'executa');
+  assert.equal(C.decide(v, NOW - 5, NOW, scan(700), {}).acao, 'nega', 'não pode comer a cota da automática');
+  assert.equal(C.decide(v, NOW - 5, NOW, scan(100, NOW - 2), {}).acao, 'pronto', 'já varreu depois do pedido');
+  assert.equal(C.decide(v, NOW - 5, NOW, scan(100, NOW - 30), {}).acao, 'pronto', 'no máximo uma por minuto');
+  assert.equal(C.decide(v, NOW - 3600, NOW, scan(0), {}).acao, 'ignora', 'pedido velho');
+  assert.equal(C.decide(v, sab - 5, sab, { t: sab - 9e4, uso: { dia: '2026-11-20', n: 790 } }, {}).acao, 'executa', 'fim de semana: cota livre');
+  const ia = { tipo: 'ia', alvo: 'rank' };
+  assert.equal(C.decide(ia, NOW - 5, NOW, {}, { uso: { dia, n: C.IA_DIA } }).acao, 'nega');
+  assert.equal(C.decide(ia, NOW - 5, NOW, {}, { uso: { dia, n: 1 } }).acao, 'executa');
+  assert.equal(C.decide(ia, NOW - 5, NOW, {}, { rank: { t: NOW } }).acao, 'pronto');
+});
+
+test('pedidos: baixa, executa, salva e avisa o site; erro também avisa', async () => {
+  const dir = tmp(), passos = [], st = [];
+  const fetchFn = async (u, o) => { assert.ok(u.endsWith(C.STATUS)); st.push(JSON.parse(o.body)); return { ok: true }; };
+  const deps = { baixa: async () => passos.push('baixa'), salva: async () => passos.push('salva'), varre: async () => passos.push('varre'), ia: async (a) => { throw new Error('sem ' + a); } };
+  const at = (message, time = NOW) => C.atende({ id: 'x1', time, message }, { dir, now: () => NOW, fetchFn, deps, log: quiet });
+  await at('varrer');
+  assert.deepEqual(passos, ['baixa', 'varre', 'salva']);
+  assert.deepEqual(st.map((s) => s.st), ['recebido', 'pronto']);
+  st.length = 0; await at('ia:EURJPY');
+  assert.deepEqual(st.map((s) => s.st + s.txt), ['recebido', 'errosem EURJPY']);
+  st.length = 0; assert.equal(await at('qualquer coisa'), 'ignora');
+  assert.equal(st.length, 0);
+});
+
+test('pedidos: escuta o ntfy, não repete pedido ao reconectar e termina no prazo', async () => {
+  const dir = tmp(); let varridas = 0, conexoes = 0;
+  const linha = (o) => JSON.stringify(o) + '\n', t = Math.floor(Date.now() / 1000);
+  const fetchFn = async (u) => {
+    if (u.endsWith(C.STATUS)) return { ok: true };
+    conexoes++;
+    const enc = new TextEncoder(), txt = linha({ event: 'open' }) + linha({ id: 'a', event: 'message', time: t, message: 'varrer' }) + 'lixo\n';
+    return { ok: true, body: (async function* () { yield enc.encode(txt.slice(0, 30)); yield enc.encode(txt.slice(30)); })() };
+  };
+  const t0 = Date.now();
+  await C.escuta({ dir, segundos: 12, fetchFn, log: quiet, deps: { baixa: async () => {}, salva: async () => {}, varre: async () => { varridas++; } } });
+  assert.equal(varridas, 1);
+  assert.ok(conexoes >= 2 && Date.now() - t0 < 14000);
+});
+
+test('IA na nuvem: grava ia.json; sem chave explica o que falta', async () => {
+  const { runIA } = require('../scripts/ia.js');
+  const dir = tmp(), log = { td: [], ntfy: [] }, real = globalThis.fetch;
+  await runScan({ dir, key: 'k', topic: '', fetchFn: fakeFetch(log, NOW), now: NOW, throttle: noThrottle, log: quiet });
+  await assert.rejects(runIA({ dir, alvo: 'rank', key: '' }), /GEMINI_KEY/);
   try {
-    globalThis.fetch = fakeFetch(log, NOW);
-    const same = await MA.data.refresh(eur, stored, st, { key: 'k', now: NOW });
-    assert.equal(same.requests, 0);
-    const fresh = await MA.data.refresh(eur, {}, st, { key: 'k', now: NOW });
-    assert.equal(fresh.requests, 3);
-    for (const d of [same.data, fresh.data]) {
-      const s = MA.setups.summarize(eur, MA.setups.analyzeAsset(eur, d, st, NOW));
-      assert.deepEqual(s, cloud.assets.find((x) => x.name === 'EURUSD'));
-    }
-    globalThis.fetch = fakeFetch(log, NOW + 1800);
-    assert.equal((await MA.data.refresh(eur, stored, st, { key: 'k', now: NOW + 1800 })).requests, 1);
-    // chave recusada e cota do dia: erro na hora, sem ficar esperando
-    for (const [code, message] of [[401, 'apikey incorrect'], [429, 'You have run out of API credits for the day.']]) {
-      globalThis.fetch = async () => ({ json: async () => ({ status: 'error', code, message }) });
-      await assert.rejects(MA.data.refresh(eur, {}, st, { key: 'k', now: NOW }), (e) => e.code === code);
-    }
-  } finally { globalThis.fetch = realFetch; }
+    globalThis.fetch = async () => ({ ok: true, status: 200, json: async () => ({ candidates: [{ content: { parts: [{ text: '{"ranking":[],"resumo":"ok"}' }] } }] }) });
+    await runIA({ dir, alvo: 'EURUSD', key: 'k', now: NOW });
+    const ia = await runIA({ dir, alvo: 'rank', key: 'k', now: NOW + 5 });
+    assert.equal(ia.ativos.EURUSD.out.resumo, 'ok'); assert.equal(ia.rank.scan, NOW); assert.equal(ia.uso.n, 2);
+  } finally { globalThis.fetch = real; }
+});
+
+test('pedidos: segredo nunca sai no aviso público', () => {
+  const env = { TD_KEY: 'segredoTD', GH_TOKEN: 'ghs_abc', GEMINI_KEY: 'AIzaX', NTFY_TOPIC: 'topico-privado' };
+  const s = C.limpa("fatal: unable to access 'https://x-access-token:ghs_abc@github.com/a/b.git/': segredoTD AIzaX topico-privado", env);
+  assert.doesNotMatch(s, /ghs_abc|segredoTD|AIzaX|topico-privado|x-access-token/);
 });

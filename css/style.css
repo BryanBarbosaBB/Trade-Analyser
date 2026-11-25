@@ -93,10 +93,6 @@ ul.tight li { margin: 2px 0; }
 .warn-txt { color: var(--warn); font-weight: 600; }
 .hist-wrap table { min-width: 560px; }
 #history { margin-top: 16px; }
-dialog { background: var(--panel); color: var(--text); border: 1px solid var(--line); border-radius: var(--radius); padding: 16px; width: min(440px, calc(100vw - 32px)); }
-dialog::backdrop { background: rgba(0,0,0,.5); }
-dialog h2 { margin: 0 0 8px; font-size: 16px; }
-dialog .toolbar { margin: 0; }
 .missing { border-left: 3px solid var(--warn); padding: 4px 10px; margin: 8px 0; }
 
 @media (max-width: 760px) {

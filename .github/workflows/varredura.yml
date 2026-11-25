@@ -8,7 +8,8 @@
 # "Run workflow" manual varre na hora (forçar) e não mexe na corrente.
 #
 # Resultado salvo no ramo `dados` (um único commit, substituído a cada rodada). O site lê de lá.
-# Secrets (Settings → Secrets and variables → Actions): TD_KEY (obrigatório) e NTFY_TOPIC.
+# Enquanto espera, a rodada atende os botões "Varrer agora" e IA do site (scripts/comandos.js).
+# Secrets (Settings → Secrets and variables → Actions): TD_KEY (obrigatório), NTFY_TOPIC e GEMINI_KEY (botões da IA).
 name: Varredura
 
 on:
@@ -16,7 +17,7 @@ on:
     - cron: '17 * * * *'
   push:
     branches: [main]
-    paths: ['.github/workflows/varredura.yml', 'scripts/scan.js', 'scripts/agenda.js']
+    paths: ['.github/workflows/varredura.yml', 'scripts/scan.js', 'scripts/agenda.js', 'scripts/comandos.js', 'scripts/ia.js', 'scripts/dados.sh']
   workflow_dispatch:
     inputs:
       forcar:
@@ -45,9 +46,9 @@ jobs:
           node-version: '22'
 
       - name: Baixa os dados da rodada anterior
-        run: |
-          git clone --depth 1 --branch dados "https://x-access-token:${{ secrets.GITHUB_TOKEN }}@github.com/${{ github.repository }}.git" dados \
-            || mkdir -p dados
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: bash scripts/dados.sh baixa dados
 
       - name: Confere se é hora de varrer
         id: hora
@@ -68,24 +69,24 @@ jobs:
 
       - name: Salva no ramo dados
         if: steps.hora.outputs.varrer == 'true'
-        working-directory: dados
-        run: |
-          rm -rf .git
-          git init -q -b dados
-          git config user.name "varredura"
-          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git add -A
-          git commit -q -m "Varredura $(date -u +'%Y-%m-%d %H:%M') UTC"
-          git push -q --force "https://x-access-token:${{ secrets.GITHUB_TOKEN }}@github.com/${{ github.repository }}.git" dados
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: bash scripts/dados.sh salva dados
 
-      - name: Espera o próximo horário e dispara a próxima rodada
+      - name: Espera o próximo horário (atendendo os botões do site) e dispara a próxima rodada
         if: ${{ !cancelled() && !(github.event_name == 'workflow_dispatch' && inputs.forcar) }}
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TD_KEY: ${{ secrets.TD_KEY }}
+          NTFY_TOPIC: ${{ secrets.NTFY_TOPIC }}
+          GEMINI_KEY: ${{ secrets.GEMINI_KEY }}
         run: |
           s=$(node scripts/agenda.js espera)
+          fim=$(( $(date +%s) + s ))
           echo "Próxima rodada em $((s / 60)) min ($(date -u -d "+$s sec" +'%H:%M') UTC)"
-          sleep "$s"
+          # escuta os botões do site; se falhar, só espera
+          node scripts/comandos.js dados "$s" || true
+          r=$(( fim - $(date +%s) )); if [ "$r" -gt 0 ]; then sleep "$r"; fi
           for i in 1 2 3 4 5; do
             code=$(curl -s -o /tmp/r.txt -w '%{http_code}' -X POST \
               -H "Authorization: Bearer $GH_TOKEN" -H "Accept: application/vnd.github+json" \

@@ -42,7 +42,12 @@ function espera(now) {
   return SALTO_MAX;
 }
 
-module.exports = { isSlot, deveVarrer, espera, SLOT, ATRASO };
+/* Horários de varredura que ainda faltam / já passaram no dia UTC (quando a cota da Twelve Data zera). */
+const slotsDoDia = (now) => { const d0 = Math.floor(now / 86400) * 86400, out = []; for (let s = d0; s < d0 + 86400; s += SLOT) if (isSlot(s)) out.push(s); return out; };
+const slotsRestantes = (now) => slotsDoDia(now).filter((s) => s > now).length;
+const slotsPassados = (now) => slotsDoDia(now).filter((s) => s <= now).length;
+
+module.exports = { slotsRestantes, slotsPassados, isSlot, deveVarrer, espera, SLOT, ATRASO };
 
 if (require.main === module) {
   const now = Math.floor(Date.now() / 1000);
