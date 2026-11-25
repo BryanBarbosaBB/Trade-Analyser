@@ -206,3 +206,55 @@ test('agenda: a corrente varre cada horário uma vez e nunca para', () => {
   assert.equal(varridos.size, esperado, 'nenhuma varredura extra');
   assert.ok(rodadas < esperado + 60, 'rodadas: ' + rodadas);
 });
+
+test('missing: todo setup que não é ENTRADA diz o que falta; ENTRADA não tem pendência', () => {
+  let seen = 0;
+  const s = Object.assign({}, MA.DEFAULT_SETTINGS, { asiaSignals: true });
+  for (const h of [2, 10, 14, 22]) for (const a of MA.DEFAULT_ASSETS.filter((x) => x.enabled)) {
+    const at = Date.UTC(2026, 10, 18, h, 0) / 1000, data = {};
+    for (const [tf, iv, n] of [['M15', '15min', 500], ['H1', '1h', 1200], ['D1', '1day', 400]]) data[tf] = MA.data.parse(fakeSeries(a.td, iv, n, at), tf, at);
+    data.H4 = MA.data.resample(data.H1, 14400, 3600, at);
+    for (const c of MA.setups.analyzeAsset(a, data, s, at).candidates) {
+      seen++;
+      assert.equal(c.missing.length === 0, c.status === 'ENTRADA', a.name + ' ' + c.name + ' ' + c.status);
+      if (!c.triggered) assert.ok(c.missing.some((m) => /preço|vela M15|RSI M15/.test(m)), 'sem gatilho explica o gatilho: ' + c.missing);
+    }
+  }
+  assert.ok(seen > 5);
+});
+
+test('scanOrder: D1/H4 alinhados e score alto primeiro', () => {
+  const { scanOrder } = require('../scripts/scan.js');
+  const L = ['A', 'B', 'C', 'D'].map((name) => ({ name }));
+  const prev = [{ name: 'A', score: 90, bias: { D1: 'alta', H4: 'neutro' } }, { name: 'B', score: 60, bias: { D1: 'baixa', H4: 'baixa' } },
+    { name: 'C', score: 80, bias: { D1: 'alta', H4: 'alta' } }];
+  assert.deepEqual(scanOrder(L, prev).map((a) => a.name), ['C', 'B', 'A', 'D']);
+  assert.deepEqual(scanOrder(L, undefined).map((a) => a.name), ['A', 'B', 'C', 'D']);
+});
+
+test('varredura manual do site: mesmo resultado da nuvem e só busca o que mudou', async () => {
+  const dir = tmp(), log = { td: [], ntfy: [] }, realFetch = globalThis.fetch;
+  const cloud = await runScan({ dir, key: 'k', topic: '', fetchFn: fakeFetch(log, NOW), now: NOW, throttle: noThrottle, log: quiet });
+  const eur = MA.DEFAULT_ASSETS.find((a) => a.name === 'EURUSD'), st = Object.assign({}, MA.DEFAULT_SETTINGS, { asiaSignals: true });
+  const v = JSON.parse(fs.readFileSync(path.join(dir, 'velas', 'EURUSD.json'), 'utf8'));
+  const un = (a) => a.map(([t, o, h, l, c]) => ({ t, o, h, l, c }));
+  const stored = { M15: un(v.M15), H1: un(v.H1), D1: un(v.D1) };
+  try {
+    globalThis.fetch = fakeFetch(log, NOW);
+    const same = await MA.data.refresh(eur, stored, st, { key: 'k', now: NOW });
+    assert.equal(same.requests, 0);
+    const fresh = await MA.data.refresh(eur, {}, st, { key: 'k', now: NOW });
+    assert.equal(fresh.requests, 3);
+    for (const d of [same.data, fresh.data]) {
+      const s = MA.setups.summarize(eur, MA.setups.analyzeAsset(eur, d, st, NOW));
+      assert.deepEqual(s, cloud.assets.find((x) => x.name === 'EURUSD'));
+    }
+    globalThis.fetch = fakeFetch(log, NOW + 1800);
+    assert.equal((await MA.data.refresh(eur, stored, st, { key: 'k', now: NOW + 1800 })).requests, 1);
+    // chave recusada e cota do dia: erro na hora, sem ficar esperando
+    for (const [code, message] of [[401, 'apikey incorrect'], [429, 'You have run out of API credits for the day.']]) {
+      globalThis.fetch = async () => ({ json: async () => ({ status: 'error', code, message }) });
+      await assert.rejects(MA.data.refresh(eur, {}, st, { key: 'k', now: NOW }), (e) => e.code === code);
+    }
+  } finally { globalThis.fetch = realFetch; }
+});

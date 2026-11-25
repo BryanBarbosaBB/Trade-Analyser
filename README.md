@@ -33,6 +33,15 @@ Observações:
 - Se a varredura falhar, o GitHub manda e-mail e o site continua mostrando a última varredura boa.
 - Teste local do site com dados de uma pasta: `python -m http.server 8770` e abra `http://127.0.0.1:8770/?dados=pasta`.
 
+## Botões manuais do site
+| Botão | O que faz |
+|---|---|
+| **Varrer agora** / **Varrer este ativo** | Busca as velas novas na Twelve Data e refaz a análise na hora, em qualquer horário, com a mesma regra. Gasta de 0 a 36 consultas da cota de 800/dia (a mesma da nuvem). O resultado aparece marcado "manual", só neste aparelho, e some quando a nuvem varre de novo. Não entra no histórico nem notifica. |
+| **Ranking IA** / **Analisar com IA** | O Gemini comenta os números do motor. Não cria preço nem ENTRADA. |
+| **Chaves** | Guarda as chaves da Twelve Data e do Gemini só no navegador (uma vez por aparelho). *Esquecer* apaga. |
+
+**Falta:** cada ativo que não é ENTRADA mostra o que ainda falta. O score mede a qualidade da área supondo a entrada nela; score alto sem gatilho não é sinal.
+
 ## Como funciona
 | Parte | O que faz |
 |---|---|
@@ -73,8 +82,20 @@ Para rodar: `python scripts/export_mt5.py 3` e depois `node scripts/backtest.js 
 
 Leitura: no período longo, a regra nos 12 ativos fica no zero a zero. O resultado positivo dos 46 dias foi do momento. Escolhendo os ativos com dados antigos e testando no período novo sobra uma vantagem pequena (+0,16R), que ainda pode ser sorte estatística, com quedas de até 20R.
 
+### Afrouxar a regra ajuda? (25/11/2026, `scripts/lab3.js`, mesmos dados, saída TP3)
+| Regra (12 ativos) | Treino (até 06/2025) | Teste (07/2025–11/2026) |
+|---|---|---|
+| ENTRADA, checando a cada 30 min (atual) | −0,05R | +0,03R |
+| ENTRADA, checando a cada 15 min | −0,07R | −0,13R |
+| Score ≥ 75 sem gatilho, a mercado | −0,09R | −0,14R |
+| Score ≥ 85 sem gatilho, a mercado | −0,05R | +0,07R |
+| Score ≥ 75 sem gatilho, ordem limite na área | −0,03R | −0,07R |
+| Gatilho bloqueado pelas travas | −0,08R | −0,13R |
+
+Leitura: nenhuma alternativa deu lucro no treino e no teste ao mesmo tempo. A varredura de 30 min perde 29% dos episódios de ENTRADA, mas os sinais de :15/:45 não foram melhores. A regra ficou como estava.
+
 ## Testes
 ```
-node --test tests/engine.test.js tests/scan.test.js   # motor + varredura automática (28 testes)
+node --test tests/engine.test.js tests/scan.test.js   # motor + varredura automática (33 testes)
 node scripts/smoke.js SUA_CHAVE XAUUSD  # análise com dados reais no terminal
 ```

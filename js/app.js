@@ -1,6 +1,8 @@
-/* Interface: painel e detalhe do ativo. Sem login e sem chaves.
+/* Interface: painel e detalhe do ativo. Sem login.
    A varredura roda sozinha no GitHub Actions a cada 30 min (scripts/scan.js) e salva no ramo `dados`.
-   O site só lê esses dados, então PC e celular mostram exatamente o mesmo resultado. */
+   O site lê esses dados, então PC e celular mostram o mesmo resultado.
+   "Varrer agora" e a IA são manuais: usam as chaves do usuário, guardadas só no navegador dele (nunca no repositório).
+   O resultado manual vale só neste aparelho e até a próxima varredura da nuvem; não entra no histórico nem notifica. */
 (function (MA) {
   'use strict';
   const $ = (id) => document.getElementById(id);
@@ -12,7 +14,8 @@
 
   const settings = structuredClone(MA.DEFAULT_SETTINGS);
   settings.asiaSignals = true; // igual à varredura (scripts/scan.js)
-  const state = { scan: null, ref: BRANCH, full: {}, errors: {}, current: null, tf: 'M15', userPlan: null, loading: false };
+  const state = { scan: null, ref: BRANCH, full: {}, errors: {}, current: null, tf: 'M15', userPlan: null, loading: false,
+    manual: {}, note: '', scanning: false, ai: {} }; // manual: {ATIVO: {t, r, s}} analisados neste aparelho
   const assetBy = (name) => settings.assets.find((a) => a.name === name);
   const fmt = (x, d) => (x == null || Number.isNaN(x) ? '—' : Number(x).toFixed(d));
   const arrow = (dir) => dir === 'alta' ? '<span class="up" title="alta">▲</span>' : dir === 'baixa' ? '<span class="down" title="baixa">▼</span>' : '<span class="neutral" title="neutro">▬</span>';
@@ -27,6 +30,37 @@
     try { Object.keys(localStorage).filter((k) => k.startsWith('ma.')).forEach((k) => localStorage.removeItem(k)); } catch (e) { /* ignore */ }
     try { sessionStorage.removeItem('ma.admin'); } catch (e) { /* ignore */ }
   }
+
+  // ---------------- chaves (só neste navegador) ----------------
+  const KEYS = {
+    td: { name: 'Twelve Data', url: 'https://twelvedata.com/account/api-keys', why: 'A varredura manual busca as cotações direto da Twelve Data.' },
+    gemini: { name: 'Gemini', url: 'https://aistudio.google.com/apikey', why: 'A leitura da IA usa o Gemini (Google).' },
+  };
+  const mem = {}; // se o navegador bloquear o localStorage, a chave vale até fechar a página
+  const getKey = (k) => { try { return localStorage.getItem('analisador.' + k) || mem[k] || ''; } catch (e) { return mem[k] || ''; } };
+  function setKey(k, v) {
+    mem[k] = v;
+    try { if (v) localStorage.setItem('analisador.' + k, v); else localStorage.removeItem('analisador.' + k); } catch (e) { /* só em memória */ }
+  }
+
+  /* Abre a janelinha de chaves. Devolve true se salvou. */
+  function askKeys(which, msg) {
+    const dlg = $('keys');
+    if (dlg.open) return Promise.resolve(false);
+    $('keys-msg').innerHTML = (msg ? '<span class="err">' + esc(msg) + '</span><br>' : '') +
+      which.map((k) => esc(KEYS[k].why) + ' <a href="' + KEYS[k].url + '" target="_blank" rel="noopener">Pegar a chave ' + esc(KEYS[k].name) + '</a>').join('<br>');
+    for (const k in KEYS) { $('key-' + k + '-row').classList.toggle('hidden', !which.includes(k)); $('key-' + k).value = getKey(k); }
+    dlg.returnValue = '';
+    dlg.showModal();
+    return new Promise((resolve) => dlg.addEventListener('close', () => {
+      const ok = dlg.returnValue === 'ok';
+      if (ok) for (const k of which) setKey(k, $('key-' + k).value.trim());
+      if (dlg.returnValue === 'forget') for (const k of which) setKey(k, '');
+      for (const k in KEYS) $('key-' + k).value = '';
+      resolve(ok);
+    }, { once: true }));
+  }
+  async function needKey(k) { return !!getKey(k) || ((await askKeys([k])) && !!getKey(k)); }
 
   // ---------------- dados salvos (ramo `dados` no GitHub) ----------------
   async function getJson(url) {
@@ -48,13 +82,16 @@
   const rawUrl = (ref, file) => (LOCAL ? LOCAL.replace(/\/$/, '') + '/' : 'https://raw.githubusercontent.com/' + REPO + '/' + ref + '/') + file;
 
   async function load() {
-    if (state.loading) return;
+    if (state.loading || state.scanning) return;
     state.loading = true; $('btn-reload').disabled = true;
     setStatus('Carregando a última varredura…');
     try {
       const ref = LOCAL ? 'local' : await latestRef();
       const scan = await getJson(rawUrl(ref, 'scan.json'));
-      if (!state.scan || scan.t !== state.scan.t) { state.full = {}; state.errors = {}; }
+      if (!state.scan || scan.t !== state.scan.t) {
+        state.full = {}; state.errors = {}; state.note = '';
+        for (const n of Object.keys(state.manual)) if (state.manual[n].t <= scan.t) delete state.manual[n]; // a nuvem já tem dados mais novos
+      }
       state.scan = scan; state.ref = ref;
       renderList(); renderHistory(); statusLine();
       if (state.current && !$('v-detalhe').classList.contains('hidden')) await openAsset(state.current, true);
@@ -68,34 +105,143 @@
     state.loading = false; $('btn-reload').disabled = false;
   }
 
+  // ---------------- varredura manual ----------------
+  async function savedCandles(name) {
+    try {
+      const v = await getJson(rawUrl(state.ref, 'velas/' + encodeURIComponent(name) + '.json'));
+      const un = (a) => (a || []).map(([t, o, h, l, c]) => ({ t, o, h, l, c }));
+      return { M15: un(v.M15), H1: un(v.H1), D1: un(v.D1) };
+    } catch (e) { return {}; }
+  }
+
+  /* Varre agora os ativos pedidos, com as mesmas regras da nuvem. */
+  async function scanNow(names) {
+    if (state.scanning || !(await needKey('td')) || state.scanning) return;
+    state.scanning = true; scanButtons();
+    const errs = [], done = [];
+    let used = 0, stop = null;
+    for (let i = 0; i < names.length && !stop; i++) {
+      const asset = assetBy(names[i]), label = 'Varrendo ' + asset.name + ' (' + (i + 1) + '/' + names.length + ')…';
+      setStatus(label);
+      try {
+        // parte das velas mais novas que este aparelho tem: as da última varredura manual ou as da nuvem
+        const m = state.manual[asset.name], stored = m ? m.data : await savedCandles(asset.name);
+        const { data, requests } = await MA.data.refresh(asset, stored, settings,
+          { key: getKey('td'), now: Math.floor(Date.now() / 1000), onWait: (s) => setStatus(label + ' limite de 8 consultas/min, aguardando ' + s + ' s') });
+        used += requests;
+        const now = Math.floor(Date.now() / 1000), r = MA.setups.analyzeAsset(asset, data, settings, now);
+        state.manual[asset.name] = { t: now, r, data, s: MA.setups.summarize(asset, r) };
+        delete state.errors[asset.name]; done.push(asset.name);
+      } catch (e) {
+        if (e.code === 401) stop = { key: true, msg: 'A Twelve Data recusou a chave.' };
+        else if (MA.data.isDayLimit(e)) stop = { msg: 'Acabaram as 800 consultas grátis de hoje da Twelve Data (a varredura da nuvem usa a mesma cota).' };
+        else errs.push(asset.name + ' (' + e.message + ')');
+      }
+      renderList();
+      if (state.current === asset.name && resultOf(asset.name)) renderDetail();
+    }
+    state.scanning = false; scanButtons();
+    const entr = done.filter((n) => state.manual[n].s.status === 'ENTRADA'), ses = MA.an.sessions();
+    state.note = stop ? stop.msg : 'Varredura manual às ' + when(Date.now() / 1000).slice(-5) + ': ' + done.length + ' ativo(s), ' + used + ' consulta(s)' +
+      (entr.length ? ' · ENTRADA em ' + entr.join(', ') : ' · nenhuma ENTRADA') + (errs.length ? ' · erro: ' + errs.join('; ') : '') +
+      (ses.good || ses.active.includes('Ásia') ? '' : ' · ' + ses.label.toLowerCase() + ': neste horário nunca sai ENTRADA');
+    statusLine();
+    if (stop && stop.key && await askKeys(['td'], stop.msg)) scanNow(names);
+  }
+
+  function scanButtons() {
+    $('btn-scan').disabled = $('btn-scan-one').disabled = $('btn-reload').disabled = state.scanning;
+    $('btn-scan').textContent = state.scanning ? 'Varrendo…' : 'Varrer agora';
+    $('btn-scan-one').textContent = state.scanning ? 'Varrendo…' : 'Varrer este ativo';
+  }
+
+  // resultado em uso: o manual (se houver) ou o da nuvem
+  const resultOf = (name) => (state.manual[name] ? state.manual[name].r : state.full[name]);
+  const dataTime = (name) => (state.manual[name] ? state.manual[name].t : state.scan ? state.scan.t : 0);
+  function rowsNow() {
+    const cloud = (state.scan && state.scan.assets) || [];
+    return settings.assets.filter((a) => a.enabled)
+      .map((a) => (state.manual[a.name] ? Object.assign({ manual: true }, state.manual[a.name].s) : cloud.find((x) => x.name === a.name)))
+      .filter(Boolean).sort((x, y) => y.score - x.score);
+  }
+
+  // ---------------- IA (Gemini) ----------------
+  const aiSettings = () => Object.assign({}, settings, { geminiKey: getKey('gemini') });
+  const aiKey = (name) => name + '|' + dataTime(name);
+
+  async function rankAI() {
+    const box = $('rank-box');
+    if (!state.scan || !(await needKey('gemini'))) return;
+    box.classList.remove('hidden');
+    box.innerHTML = '<p class="muted">Consultando a IA…</p>';
+    $('btn-rank').disabled = true;
+    try {
+      const names = rowsNow().filter((r) => r.score >= settings.score.watchMin).map((r) => r.name);
+      const results = [];
+      for (const n of names) { try { results.push(await fullResult(n)); } catch (e) { /* sem velas desse ativo */ } }
+      const out = await MA.ai.rank(results, aiSettings());
+      box.innerHTML = '<h2>Ranking da IA</h2>' +
+        (Array.isArray(out.ranking) && out.ranking.length ? '<ol class="tight">' + out.ranking.map((x) => '<li><b>' + esc(x.ativo) + '</b> — ' + esc(x.motivo) + '</li>').join('') + '</ol>' : '') +
+        '<p>' + esc(out.comentario_geral || '') + '</p><p class="muted">A IA só comenta os números do motor. Ela não cria ENTRADA nem muda a regra.</p>';
+    } catch (e) { box.innerHTML = '<p class="err">' + esc(e.message) + '</p><button data-keys="gemini">Trocar a chave do Gemini</button>'; }
+    $('btn-rank').disabled = false;
+  }
+
+  function renderAI() {
+    const out = state.ai[aiKey(state.current)];
+    let html = '<h2>Leitura da IA</h2>';
+    if (!out) html += '<p class="muted">A IA comenta os números calculados (não cria preços nem ENTRADA).</p><button id="btn-ai" class="primary">Analisar com IA</button>';
+    else if (out.loading) html += '<p class="muted">Consultando o Gemini…</p>';
+    else if (out.error) html += '<p class="err">' + esc(out.error) + '</p><button id="btn-ai">Tentar de novo</button> <button data-keys="gemini">Trocar a chave</button>';
+    else {
+      const q = Math.max(0, Math.min(5, out.qualidade | 0));
+      html += '<div class="ai-out"><p><span class="stars">' + '★'.repeat(q) + '☆'.repeat(5 - q) + '</span> · confirma setup: <b>' + esc(out.confirma_setup) + '</b></p>' +
+        '<p>' + esc(out.resumo) + '</p><h3>O que esperar</h3><p>' + esc(out.o_que_esperar) + '</p>' +
+        (Array.isArray(out.riscos) && out.riscos.length ? '<h3>Riscos</h3><ul class="tight">' + out.riscos.map((x) => '<li>' + esc(x) + '</li>').join('') + '</ul>' : '') +
+        (out._modelo ? '<p class="muted">Modelo: ' + esc(out._modelo) + '</p>' : '') + '</div>';
+    }
+    $('c-ai').innerHTML = html;
+  }
+
+  async function runAI() {
+    const name = state.current, r = resultOf(name);
+    if (!r || !(await needKey('gemini'))) return;
+    const k = aiKey(name);
+    state.ai[k] = { loading: true };
+    if (state.current === name) renderAI();
+    try { state.ai[k] = await MA.ai.analyze(r, aiSettings()); } catch (e) { state.ai[k] = { error: e.message }; }
+    if (state.current === name && resultOf(name)) renderAI();
+  }
+
   function setStatus(t) { $('scan-status').textContent = t; }
 
   function statusLine() {
     const s = state.scan;
-    if (!s) return;
+    if (!s || state.scanning) return;
     const ago = Math.round((Date.now() / 1000 - s.t) / 60);
     const agoTxt = ago < 1 ? 'agora' : ago < 120 ? 'há ' + ago + ' min' : 'há ' + Math.round(ago / 60) + ' h';
     const n = Object.keys(s.errors || {}).length;
     setStatus('Última varredura: ' + when(s.t) + ' (' + agoTxt + ')' + (n ? ' · ' + n + ' com erro' : '') +
-      ' · ' + SCHEDULE);
+      ' · ' + SCHEDULE + (state.note ? ' — ' + state.note : ''));
     $('setup-hint').classList.add('hidden');
   }
 
   // ---------------- painel ----------------
   function renderList() {
     const s = state.scan, errs = (s && s.errors) || {};
-    const rows = ((s && s.assets) || []).slice().sort((x, y) => y.score - x.score);
+    const rows = rowsNow();
     $('list').innerHTML = rows.map((r) => {
-      const b = r.best, e = errs[r.name];
+      const b = r.best, e = r.manual ? null : errs[r.name];
       const setup = b ? esc(b.name) + ' — <b class="' + (b.dir === 'compra' ? 'up' : 'down') + '">' + b.dir + '</b><small>' +
-        (b.triggered ? 'Gatilho confirmado' : 'Área a ' + fmt(b.distAtr, 1) + ' ATR(H1)') + '</small>' : '<span class="muted">Nenhum setup</span>';
+        (b.status !== 'ENTRADA' && b.missing && b.missing.length ? '<b>Falta:</b> ' + b.missing.map(esc).join(' · ')
+          : b.triggered ? 'Gatilho confirmado' : 'Área a ' + fmt(b.distAtr, 1) + ' ATR(H1)') + '</small>' : '<span class="muted">Nenhum setup</span>';
       return '<div class="row" data-asset="' + esc(r.name) + '">' +
         '<div class="c-name"><div class="name">' + esc(r.name) + '</div><div class="price">' + fmt(r.price, r.digits) + (r.proxy ? ' · ' + esc(r.td) : '') + '</div></div>' +
         '<div class="c-arrows arrows">' + ['D1', 'H4', 'H1', 'M15'].map((k) => arrow(r.bias[k])).join('') + '</div>' +
         '<div class="c-setup setup-txt">' + setup + (e ? '<small class="err">' + esc(e) + '</small>' : '') + '</div>' +
         '<div class="c-score score">' + r.score + '<span class="bar"><i style="width:' + r.score + '%"></i></span></div>' +
         '<div class="c-status">' + badge(r.status) + (b && b.asia ? ' <small class="warn-txt">Ásia</small>' : '') + '</div>' +
-        '<div class="c-time time">' + MA.chart.fmtTime(r.updated + MA.data.TF_SEC.M15) + (r.stale ? ' <span class="err">(antigo)</span>' : '') + '</div></div>';
+        '<div class="c-time time">' + MA.chart.fmtTime(r.updated + MA.data.TF_SEC.M15) + (r.manual ? ' <span class="warn-txt">manual</span>' : '') + (r.stale ? ' <span class="err">(antigo)</span>' : '') + '</div></div>';
     }).join('');
   }
 
@@ -119,7 +265,7 @@
 
   /* Refaz a análise com as mesmas velas e o mesmo horário da varredura: resultado idêntico ao salvo. */
   async function fullResult(name) {
-    if (state.full[name]) return state.full[name];
+    if (resultOf(name)) return resultOf(name);
     const v = await getJson(rawUrl(state.ref, 'velas/' + encodeURIComponent(name) + '.json'));
     const un = (a) => a.map(([t, o, h, l, c]) => ({ t, o, h, l, c }));
     const now = state.scan.t;
@@ -137,7 +283,7 @@
     if (location.hash !== '#' + name) history.replaceState(null, '', '#' + name);
     $('d-title').textContent = name;
     if (!state.scan) { $('d-status').innerHTML = '<span class="muted">Carregando…</span>'; return; }
-    if (!state.full[name]) $('d-status').innerHTML = '<span class="muted">Carregando…</span>';
+    if (!resultOf(name)) $('d-status').innerHTML = '<span class="muted">Carregando…</span>';
     try { await fullResult(name); delete state.errors[name]; } catch (e) { state.errors[name] = 'Sem velas salvas para ' + name + ' (' + e.message + ')'; }
     if (state.current === name) renderDetail();
   }
@@ -149,15 +295,15 @@
   }
 
   function renderDetail() {
-    const name = state.current, r = state.full[name], asset = assetBy(name);
+    const name = state.current, r = resultOf(name), asset = assetBy(name);
     if (!r) {
       $('d-status').innerHTML = '<span class="err">' + esc(state.errors[name] || 'Sem dados') + '</span>';
       MA.chart.destroy();
-      ['c-setup', 'c-trend', 'c-calc'].forEach((id) => { $(id).innerHTML = ''; });
+      ['c-setup', 'c-ai', 'c-trend', 'c-calc'].forEach((id) => { $(id).innerHTML = ''; });
       return;
     }
     const d = r.digits, b = r.best;
-    $('d-status').innerHTML = badge(r.status) + ' <span class="muted">score ' + r.score + ' · ' + fmt(r.price, d) + ' · ' + esc(r.session.label) + ' · varredura ' + when(state.scan.t) + '</span>';
+    $('d-status').innerHTML = badge(r.status) + ' <span class="muted">score ' + r.score + ' · ' + fmt(r.price, d) + ' · ' + esc(r.session.label) + ' · varredura ' + (state.manual[name] ? 'manual ' : '') + when(dataTime(name)) + '</span>';
     document.querySelectorAll('#tf-tabs button').forEach((x) => x.classList.toggle('active', x.dataset.tf === state.tf));
     const plan = state.userPlan ? state.userPlan.plan : b && b.status !== 'SEM SETUP' ? b.plan : null;
     MA.chart.render(r, state.tf, plan, { zones: $('opt-zones').checked, levels: $('opt-levels').checked, ema: $('opt-ema').checked });
@@ -165,7 +311,9 @@
     if (b) {
       const p = b.plan, pips = (x) => fmt(Math.abs(x - p.entry) / asset.pip, 1);
       $('c-setup').innerHTML = '<h2>' + esc(b.name) + ' — <span class="' + (b.dir === 'compra' ? 'up' : 'down') + '">' + b.dir + '</span> ' + badge(b.status) + '</h2>' +
-        '<p class="muted">' + (b.triggered ? 'Gatilho confirmado na varredura (entrada a mercado).' : 'Aguardando: entrada sugerida na área (ordem limite / alerta de preço).') + '</p>' +
+        '<p class="muted">' + (b.triggered ? 'Gatilho confirmado na varredura (entrada a mercado).' : 'Ainda sem gatilho: não é sinal. Plano abaixo só para acompanhar (no backtest, ordem limite na área sem esperar o gatilho não deu lucro).') + '</p>' +
+        (b.missing.length ? '<div class="missing"><b>Falta para ENTRADA:</b><ul class="tight">' + b.missing.map((x) => '<li>' + esc(x) + '</li>').join('') + '</ul>' +
+          (b.triggered ? '' : '<small>O score ' + b.score + ' supõe a entrada em ' + fmt(p.entry, d) + ', não no preço atual.</small>') + '</div>' : '') +
         '<table><tr><th></th><th>Preço</th><th class="num">pips</th><th class="num">R:R</th></tr>' +
         '<tr><td>Entrada</td><td>' + fmt(p.entry, d) + '</td><td></td><td></td></tr>' +
         '<tr><td class="down">SL</td><td>' + fmt(p.sl, d) + '</td><td class="num">' + pips(p.sl) + '</td><td class="num">−1</td></tr>' +
@@ -193,11 +341,12 @@
       '<span>Divergência RSI</span><span>H1: ' + (r.divergence.H1 || '—') + ' · H4: ' + (r.divergence.H4 || '—') + '</span></div>' +
       '<h3>Zonas H1</h3><ul class="tight">' + (r.tf.H1.zones.length ? r.tf.H1.zones.map((z) => '<li class="' + (z.type === 'demanda' ? 'up' : 'down') + '">' + z.type + ' ' + fmt(z.low, d) + ' – ' + fmt(z.high, d) + ' <span class="muted">(' + z.tests + ' teste(s))</span></li>').join('') : '<li class="muted">nenhuma ativa</li>') + '</ul>';
 
+    renderAI();
     renderCalc();
   }
 
   function renderCalc() {
-    const r = state.full[state.current], up = state.userPlan, d = r.digits, asset = assetBy(state.current);
+    const r = resultOf(state.current), up = state.userPlan, d = r.digits, asset = assetBy(state.current);
     let html = '<h2>SL/TP para minha entrada</h2><div class="calc-form">' +
       '<label>Direção<select id="calc-dir"><option value="compra">Compra</option><option value="venda">Venda</option></select></label>' +
       '<label>Entrada<input id="calc-entry" type="number" step="any" value="' + fmt(up ? up.plan.entry : r.price, d) + '"></label>' +
@@ -217,16 +366,22 @@
   // ---------------- eventos ----------------
   function bind() {
     $('btn-reload').addEventListener('click', load);
+    $('btn-scan').addEventListener('click', () => { const n = rowsNow().map((r) => r.name); scanNow(n.length ? n : settings.assets.filter((a) => a.enabled).map((a) => a.name)); });
+    $('btn-scan-one').addEventListener('click', () => scanNow([state.current]));
+    $('btn-rank').addEventListener('click', rankAI);
+    $('btn-keys').addEventListener('click', () => askKeys(['td', 'gemini']));
+    document.addEventListener('click', (e) => { const k = e.target.dataset && e.target.dataset.keys; if (k) askKeys([k]); });
+    $('c-ai').addEventListener('click', (e) => { if (e.target.id === 'btn-ai') runAI(); });
     $('list').addEventListener('click', (e) => { const row = e.target.closest('.row'); if (row) openAsset(row.dataset.asset); });
     $('history').addEventListener('click', (e) => { const row = e.target.closest('.hist-row'); if (row) openAsset(row.dataset.asset); });
     $('btn-back').addEventListener('click', back);
-    $('tf-tabs').addEventListener('click', (e) => { const tf = e.target.dataset && e.target.dataset.tf; if (tf && state.full[state.current]) { state.tf = tf; renderDetail(); } });
-    ['opt-zones', 'opt-levels', 'opt-ema'].forEach((id) => $(id).addEventListener('change', () => { if (state.full[state.current]) renderDetail(); }));
+    $('tf-tabs').addEventListener('click', (e) => { const tf = e.target.dataset && e.target.dataset.tf; if (tf && resultOf(state.current)) { state.tf = tf; renderDetail(); } });
+    ['opt-zones', 'opt-levels', 'opt-ema'].forEach((id) => $(id).addEventListener('change', () => { if (resultOf(state.current)) renderDetail(); }));
     $('c-calc').addEventListener('click', (e) => {
       if (e.target.id === 'btn-calc') {
         const entry = parseFloat($('calc-entry').value);
         if (!Number.isFinite(entry)) return;
-        state.userPlan = MA.setups.planForEntry(state.full[state.current], assetBy(state.current), settings, $('calc-dir').value, entry);
+        state.userPlan = MA.setups.planForEntry(resultOf(state.current), assetBy(state.current), settings, $('calc-dir').value, entry);
         renderDetail();
       } else if (e.target.id === 'btn-calc-clear') { state.userPlan = null; renderDetail(); }
     });

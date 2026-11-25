@@ -25,19 +25,7 @@ const readJson = (file, dflt) => { try { return JSON.parse(fs.readFileSync(file,
 const pack = (c) => c.map((k) => [k.t, k.o, k.h, k.l, k.c]);
 const unpack = (a) => (a || []).map(([t, o, h, l, c]) => ({ t, o, h, l, c }));
 
-/* Precisa buscar de novo se uma vela nova pode ter fechado desde a última busca. */
-function needsFetch(candles, tf, now) {
-  if (!candles || !candles.length) return true;
-  return now >= candles[candles.length - 1].t + 2 * TF_SEC[tf];
-}
-
-/* ETFs (QQQ/DIA) só têm velas no pregão americano (13:30–21:00 UTC, cobrindo o horário de verão):
-   fora dele não gasta consulta. */
-function marketOpen(asset, now) {
-  if (!asset.proxy) return true;
-  const d = new Date(now * 1000), dow = d.getUTCDay(), m = d.getUTCHours() * 60 + d.getUTCMinutes();
-  return dow >= 1 && dow <= 5 && m >= 13 * 60 + 30 && m <= 21 * 60 + 15;
-}
+const { needsFetch, marketOpen, isDayLimit } = MA.data;
 
 function makeThrottle(perMin = PER_MIN) {
   const calls = [];
@@ -57,7 +45,7 @@ async function fetchTD(fetchFn, throttle, key, symbol, tf, size, now) {
   for (let attempt = 0; ; attempt++) {
     await throttle();
     const json = await (await fetchFn(url)).json();
-    if (json && json.code === 429 && attempt === 0) { await sleep(61000); continue; } // limite por minuto: tenta uma vez
+    if (json && json.code === 429 && attempt === 0 && !isDayLimit(json)) { await sleep(61000); continue; } // limite por minuto: tenta uma vez
     return MA.data.parse(json, tf, now);
   }
 }
@@ -73,20 +61,18 @@ async function notify(fetchFn, topic, title, message, click) {
   } catch (e) { return false; }
 }
 
-const round = (x, d) => (x == null || !Number.isFinite(x) ? null : +x.toFixed(d));
+const { summarize } = MA.setups;
 
-/* Resumo de um ativo para a lista do painel (o detalhe completo o site recalcula com as velas). */
-function summarize(asset, r) {
-  const b = r.best, d = r.digits;
-  return {
-    name: asset.name, td: asset.td, proxy: asset.proxy || null, price: round(r.price, d), digits: d,
-    score: r.score, status: r.status, updated: r.updated, session: r.session.label,
-    bias: Object.fromEntries(['D1', 'H4', 'H1', 'M15'].map((k) => [k, r.bias[k].dir])),
-    best: b ? {
-      name: b.name, dir: b.dir, status: b.status, score: b.score, triggered: b.triggered, distAtr: round(b.area.distAtr, 2), asia: !!b.asia,
-      entry: round(b.plan.entry, d), sl: round(b.plan.sl, d), tp1: round(b.plan.tp1, d), tp2: round(b.plan.tp2, d), tp3: round(b.plan.tp3, d),
-    } : null,
+/* O limite de 8 consultas/min faz a varredura durar até ~3 min: começa por quem está mais perto de uma ENTRADA
+   (D1 e H4 alinhados na última varredura, depois maior score), para o aviso dele sair primeiro. */
+function scanOrder(assets, prevAssets) {
+  const rank = (a) => {
+    const p = (prevAssets || []).find((x) => x.name === a.name);
+    if (!p) return 0;
+    const aligned = p.bias && p.bias.D1 !== 'neutro' && p.bias.D1 === p.bias.H4;
+    return (aligned ? 1000 : 0) + (p.score || 0);
   };
+  return assets.map((a, i) => ({ a, i, k: rank(a) })).sort((x, y) => y.k - x.k || x.i - y.i).map((x) => x.a);
 }
 
 async function runScan({ dir, key, topic, fetchFn = fetch, now = Math.floor(Date.now() / 1000), throttle = makeThrottle(), log = console.log }) {
@@ -95,7 +81,7 @@ async function runScan({ dir, key, topic, fetchFn = fetch, now = Math.floor(Date
   const prev = readJson(path.join(dir, 'scan.json'), {});
   const settings = structuredClone(MA.DEFAULT_SETTINGS);
   settings.asiaSignals = true; // escolha do usuário: sinais da Ásia também (marcados como não validados)
-  const assets = MA.DEFAULT_ASSETS.filter((a) => a.enabled);
+  const assets = scanOrder(MA.DEFAULT_ASSETS.filter((a) => a.enabled), prev.assets);
   const out = {
     t: now, source: 'Twelve Data', assets: [], errors: {}, requests: 0,
     history: prev.history || [], alerted: Object.assign({}, prev.alerted),
@@ -162,7 +148,7 @@ async function runScan({ dir, key, topic, fetchFn = fetch, now = Math.floor(Date
   return out;
 }
 
-module.exports = { runScan, needsFetch, marketOpen, summarize };
+module.exports = { runScan, needsFetch, marketOpen, summarize, scanOrder };
 
 if (require.main === module) {
   const dir = process.argv[2] || 'dados';

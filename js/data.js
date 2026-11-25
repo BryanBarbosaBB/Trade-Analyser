@@ -92,6 +92,48 @@
     return nowSec < nextClose || nowSec - entry.fetchedAt < MIN_CACHE_SEC;
   }
 
+  /* Precisa buscar de novo se uma vela nova pode ter fechado desde a última busca. */
+  function needsFetch(candles, tf, now) {
+    if (!candles || !candles.length) return true;
+    return now >= candles[candles.length - 1].t + 2 * TF_SEC[tf];
+  }
+
+  /* ETFs (QQQ/DIA) só têm velas no pregão americano (13:30–21:00 UTC, cobrindo o horário de verão):
+     fora dele não gasta consulta. */
+  function marketOpen(asset, now) {
+    if (!asset.proxy) return true;
+    const d = new Date(now * 1000), dow = d.getUTCDay(), m = d.getUTCHours() * 60 + d.getUTCMinutes();
+    return dow >= 1 && dow <= 5 && m >= 13 * 60 + 30 && m <= 21 * 60 + 15;
+  }
+
+  /* Limite do dia (800) esgotado: esperar um minuto não adianta. */
+  const isDayLimit = (json) => !!json && json.code === 429 && /for the day|daily/i.test(json.message || '');
+
+  /* Varredura manual no site: parte das velas já salvas pela nuvem e busca só o que pode ter mudado.
+     stored = {M15,H1,D1} (velas {t,o,h,l,c}). Devolve {data, requests}. */
+  async function refresh(asset, stored, settings, { key, now, onWait }) {
+    const data = {}; let requests = 0;
+    for (const tf of ['M15', 'H1', 'D1']) {
+      let c = (stored && stored[tf]) || [];
+      if (needsFetch(c, tf, now) && (marketOpen(asset, now) || !c.length)) {
+        for (let attempt = 0; ; attempt++) {
+          await throttle(onWait);
+          const json = await fetchJson('https://api.twelvedata.com/time_series?symbol=' + encodeURIComponent(asset.td) +
+            '&interval=' + INTERVAL[tf] + '&outputsize=' + settings.candles[tf] + '&timezone=UTC&order=asc&apikey=' + encodeURIComponent(key));
+          requests++;
+          // 429 por minuto: a varredura da nuvem usa a mesma chave; espera e tenta de novo
+          if (json && json.code === 429 && !isDayLimit(json) && attempt < 2) { if (onWait) onWait(60); await sleep(61000); continue; }
+          c = parse(json, tf, now);
+          break;
+        }
+      }
+      if (!c.length) throw new Error('sem velas ' + tf);
+      data[tf] = c;
+    }
+    data.H4 = resample(data.H1, TF_SEC.H4, TF_SEC.H1, now);
+    return { data, requests };
+  }
+
   async function fetchSeries(symbol, tf, opts) {
     const { key, size, onWait, force, cacheOnly } = opts;
     const cached = readCache(symbol, tf);
@@ -136,5 +178,5 @@
     return { M15, H1, H4, D1, source: 'Twelve Data' };
   }
 
-  MA.data = { parse, resample, isFresh, getAll, clearCache, TF_SEC };
+  MA.data = { parse, resample, needsFetch, marketOpen, isDayLimit, refresh, isFresh, getAll, clearCache, TF_SEC };
 })(globalThis.MA = globalThis.MA || {});

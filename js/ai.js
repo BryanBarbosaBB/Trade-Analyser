@@ -92,7 +92,7 @@
   }
 
   async function call(prompt, settings) {
-    if (!settings.geminiKey) throw new Error('Configure a chave do Gemini em Configurações.');
+    if (!settings.geminiKey) throw new Error('Falta a chave do Gemini.');
     const key = CACHE + (await hash(prompt));
     try { const c = localStorage.getItem(key); if (c) return JSON.parse(c); } catch (e) { /* sem cache */ }
     const main = settings.geminiModel || FALLBACK_MODEL;

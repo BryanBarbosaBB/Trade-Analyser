@@ -151,13 +151,30 @@
   }
 
   /* Níveis fortes contrários à operação: S/R H1 com 4+ toques, S/R H4 com 3+ toques, máx/mín do dia e da semana. */
-  function strongObstacles(dir, ctx, entry) {
+  function strongObstacles(dir, ctx, entry, digits) {
     const s = sgn(dir), out = [];
-    for (const l of ctx.tf.H1.levels) if (l.touches >= 4) out.push({ price: l.price, desc: 'H1 ' + l.price.toFixed(2) + ', ' + l.touches + ' toques' });
-    for (const l of ctx.tf.H4.levels) if (l.touches >= 3) out.push({ price: l.price, desc: 'H4 ' + l.price.toFixed(2) + ', ' + l.touches + ' toques' });
+    for (const l of ctx.tf.H1.levels) if (l.touches >= 4) out.push({ price: l.price, desc: 'H1 ' + l.price.toFixed(digits) + ', ' + l.touches + ' toques' });
+    for (const l of ctx.tf.H4.levels) if (l.touches >= 3) out.push({ price: l.price, desc: 'H4 ' + l.price.toFixed(digits) + ', ' + l.touches + ' toques' });
     const names = { pdh: 'máxima de ontem', pdl: 'mínima de ontem', pwh: 'máxima da semana passada', pwl: 'mínima da semana passada' };
-    for (const k in names) if (ctx.period[k] != null) out.push({ price: ctx.period[k], desc: names[k] + ' ' + ctx.period[k].toFixed(2) });
+    for (const k in names) if (ctx.period[k] != null) out.push({ price: ctx.period[k], desc: names[k] + ' ' + ctx.period[k].toFixed(digits) });
     return out.filter((o) => s * (o.price - entry) > 0);
+  }
+
+  /* O que ainda falta para o setup virar ENTRADA, em português (vazio quando já é ENTRADA).
+     Sem gatilho, o score supõe a entrada na área: ele alto NÃO quer dizer "entrar agora no preço atual". */
+  function missingFor(setup, ctx, asset, entryScore, entryMin, blocks) {
+    const out = [], d = asset.digits, f = (x) => x.toFixed(d), buy = setup.dir === 'compra';
+    if (!setup.triggered) {
+      const dist = Math.abs(ctx.price - setup.entryWatch) / asset.pip;
+      const far = ' (agora ' + f(ctx.price) + ', a ' + dist.toFixed(1) + (asset.proxy ? ' pontos)' : ' pips)');
+      if (setup.name.startsWith('Pullback')) {
+        if (!setup.inArea) out.push('preço ' + (buy ? 'cair' : 'subir') + ' até ' + f(setup.entryWatch) + far);
+        if (!setup.rsiOk) out.push('RSI M15 sair de ' + (buy ? 'sobrevenda (<30)' : 'sobrecompra (>70)'));
+      } else if (!setup.inArea) out.push('preço voltar até ' + f(setup.entryWatch) + ' para o reteste' + far);
+      else out.push('vela M15 de ' + (buy ? 'alta fechar acima de ' : 'baixa fechar abaixo de ') + f(setup.entryWatch));
+    }
+    if (entryScore < entryMin) out.push('score ' + entryScore + ' (mínimo ' + entryMin + ')');
+    return out.concat(blocks);
   }
 
   function evaluate(setup, ctx, asset, settings) {
@@ -181,7 +198,7 @@
     // Travas de ENTRADA: score alto não basta. Sem espaço até o alvo, fora de Londres/NY ou operando
     // contra um nível forte logo à frente, o sinal fica no máximo em OBSERVAR.
     const s = sgn(setup.dir);
-    const strong = strongObstacles(setup.dir, ctx, entry)
+    const strong = strongObstacles(setup.dir, ctx, entry, asset.digits)
       .map((o) => ({ ...o, r: s * (o.price - entry) / plan.R }))
       .filter((o) => o.r > 0 && o.r < 1.5)
       .sort((a, b) => a.r - b.r);
@@ -208,7 +225,9 @@
     if (vol.pts === 0) warnings.push(vol.text);
     if (plan.rrNext < 1.5) warnings.push('Pouco espaço até o próximo nível contrário (R:R ' + plan.rrNext.toFixed(2) + ').');
     return {
-      ...setup, entry, plan, size, score, breakdown, status, asia: asia && status === 'ENTRADA',
+      ...setup, entry, plan, size, score, breakdown, status, blocks,
+      missing: status === 'ENTRADA' ? [] : missingFor(setup, ctx, asset, entryScore, sc.entryMin, blocks),
+      asia: asia && status === 'ENTRADA',
       confirmations: setup.conf.concat(mom.txt, vol.pts > 0 ? [vol.text] : [], ses.pts > 0 ? [ses.text] : []),
       warnings,
     };
@@ -261,5 +280,21 @@
     return { plan, size, invalidation: inval };
   }
 
-  MA.setups = { analyzeAsset, analyzeFromTF, planForEntry, alignment, rsiTrigger, pullbackAreas };
+  const round = (x, d) => (x == null || !Number.isFinite(x) ? null : +x.toFixed(d));
+
+  /* Resumo de um ativo para a lista do painel (o detalhe completo o site recalcula com as velas). */
+  function summarize(asset, r) {
+    const b = r.best, d = r.digits;
+    return {
+      name: asset.name, td: asset.td, proxy: asset.proxy || null, price: round(r.price, d), digits: d,
+      score: r.score, status: r.status, updated: r.updated, session: r.session.label,
+      bias: Object.fromEntries(['D1', 'H4', 'H1', 'M15'].map((k) => [k, r.bias[k].dir])),
+      best: b ? {
+        name: b.name, dir: b.dir, status: b.status, score: b.score, triggered: b.triggered, distAtr: round(b.area.distAtr, 2), asia: !!b.asia, missing: b.missing,
+        entry: round(b.plan.entry, d), sl: round(b.plan.sl, d), tp1: round(b.plan.tp1, d), tp2: round(b.plan.tp2, d), tp3: round(b.plan.tp3, d),
+      } : null,
+    };
+  }
+
+  MA.setups = { summarize, analyzeAsset, analyzeFromTF, planForEntry, alignment, rsiTrigger, pullbackAreas };
 })(globalThis.MA = globalThis.MA || {});
