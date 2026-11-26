@@ -49,7 +49,7 @@ Se a nuvem estiver trocando de rodada, o pedido espera na fila até ~5 min. O t�
 ## Como funciona
 | Parte | O que faz |
 |---|---|
-| `scripts/scan.js` | Varredura automática: busca M15, H1 e D1 na **Twelve Data**, monta o H4 a partir do H1, roda o motor e salva no ramo `dados`. NAS100/US30 usam os ETFs **QQQ/DIA** (os índices não estão no plano grátis; o lote não é calculado). |
+| `scripts/scan.js` | Varredura automática: busca M15, H1 e D1 na **Twelve Data**, monta o H4 a partir do H1, roda o motor e salva no ramo `dados`. NAS100/US30 usam os ETFs **QQQ/DIA** (os índices não estão no plano grátis), convertidos para a escala do índice pela proporção do último fechamento (^NDX ÷ QQQ, ^DJI ÷ DIA, do Yahoo Finance, uma vez por dia); o lote não é calculado. |
 | `js/data.js` | Leitura e conversão das velas e montagem do H4 |
 | `js/indicators.js` | EMA 50/200, RSI(14), MACD, ATR(14) e ADX, com suavização de Wilder, como no TradingView e no MT5 |
 | `js/analysis.js` | Topos e fundos, tendência por timeframe, S/R agrupados, zonas de oferta e demanda, máx./mín. do dia e da semana anteriores, sessões, divergência de RSI |
@@ -100,6 +100,6 @@ Leitura: nenhuma alternativa deu lucro no treino e no teste ao mesmo tempo. A va
 
 ## Testes
 ```
-node --test tests/engine.test.js tests/scan.test.js   # motor + varredura automática (40 testes)
+node --test tests/engine.test.js tests/scan.test.js   # motor + varredura automática (44 testes)
 node scripts/smoke.js SUA_CHAVE XAUUSD  # análise com dados reais no terminal
 ```

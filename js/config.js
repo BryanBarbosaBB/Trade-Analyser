@@ -3,14 +3,16 @@
    (aproximado; pares JPY/CAD variam com o câmbio — ajuste conforme sua corretora).
    spread = custo médio de entrada (diferença compra/venda) em preço, usado no backtest.
    NAS100/US30: o plano grátis do Twelve Data não tem os índices; usamos os ETFs QQQ/DIA como referência
-   de tendência e estrutura. Os preços são do ETF, por isso o lote não é calculado (pipValue 0). */
+   de tendência e estrutura. Antes da análise as velas do ETF são multiplicadas pela proporção índice/ETF
+   (ratio; a varredura atualiza uma vez por dia com os fechamentos de `index` e do ETF, ver MA.data.toIndex),
+   então preços, SL/TP e "pontos" saem na escala do índice da corretora. O lote não é calculado (pipValue 0). */
 (function (MA) {
   'use strict';
 
   MA.DEFAULT_ASSETS = [
     { name: 'XAUUSD', td: 'XAU/USD', pip: 0.1,    pipValue: 10,  digits: 2, spread: 0.35, enabled: true },
-    { name: 'NAS100', td: 'QQQ',     pip: 0.01,   pipValue: 0,   digits: 2, spread: 0.03, enabled: true, proxy: 'ETF QQQ (preço ≠ índice)' },
-    { name: 'US30',   td: 'DIA',     pip: 0.01,   pipValue: 0,   digits: 2, spread: 0.03, enabled: true, proxy: 'ETF DIA (preço ≠ índice)' },
+    { name: 'NAS100', td: 'QQQ',     pip: 0.01,   pipValue: 0,   digits: 2, spread: 0.03, enabled: true, proxy: 'ETF QQQ', index: '^NDX', ratio: 41.09 },
+    { name: 'US30',   td: 'DIA',     pip: 0.01,   pipValue: 0,   digits: 2, spread: 0.03, enabled: true, proxy: 'ETF DIA', index: '^DJI', ratio: 100.11 },
     { name: 'GBPJPY', td: 'GBP/JPY', pip: 0.01,   pipValue: 6.5, digits: 3, spread: 0.025, enabled: true },
     { name: 'CADJPY', td: 'CAD/JPY', pip: 0.01,   pipValue: 6.5, digits: 3, spread: 0.025, enabled: true },
     { name: 'AUDJPY', td: 'AUD/JPY', pip: 0.01,   pipValue: 6.5, digits: 3, spread: 0.02, enabled: true },

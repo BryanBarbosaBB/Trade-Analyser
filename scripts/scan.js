@@ -61,6 +61,35 @@ async function notify(fetchFn, topic, title, message, click) {
   } catch (e) { return false; }
 }
 
+/* NAS100/US30: proporção índice/ETF (^NDX ÷ QQQ, ^DJI ÷ DIA) no último fechamento comum antes de hoje, do Yahoo Finance
+   (grátis, sem chave). Uma vez por dia; se falhar, fica com a anterior (e tenta de novo na próxima rodada) ou com a de config.js. */
+const YAHOO = 'https://query1.finance.yahoo.com/v8/finance/chart/';
+async function fechamentos(fetchFn, sym) {
+  const res = await fetchFn(YAHOO + encodeURIComponent(sym) + '?range=10d&interval=1d',
+    { headers: { 'User-Agent': 'Mozilla/5.0' }, signal: AbortSignal.timeout(15000) });
+  const r = (await res.json()).chart.result[0], c = r.indicators.quote[0].close, out = {};
+  r.timestamp.forEach((t, i) => { if (c[i] > 0) out[new Date(t * 1000).toISOString().slice(0, 10)] = c[i]; });
+  return out;
+}
+async function fatores(fetchFn, assets, prev, now, log) {
+  const hoje = new Date(now * 1000).toISOString().slice(0, 10), out = {};
+  for (const a of assets) {
+    if (!a.proxy || !a.ratio) continue;
+    const p = prev && prev[a.name];
+    if (p && p.dia === hoje) { out[a.name] = p; continue; }
+    try {
+      const i = await fechamentos(fetchFn, a.index), e = await fechamentos(fetchFn, a.td);
+      const d = Object.keys(i).filter((x) => e[x] && x < hoje).sort().pop(), k = d && i[d] / e[d];
+      if (!(k > a.ratio * 0.8 && k < a.ratio * 1.25)) throw new Error('proporção fora do esperado (' + k + ')');
+      out[a.name] = { k: +k.toFixed(4), dia: hoje, fech: d };
+    } catch (err) {
+      out[a.name] = p || { k: a.ratio, dia: null, fech: null };
+      log('Proporção', a.name, 'não atualizada:', err.message);
+    }
+  }
+  return out;
+}
+
 const { summarize } = MA.setups;
 const { slotsPassados } = require('./agenda.js');
 
@@ -86,6 +115,7 @@ async function runScan({ dir, key, topic, fetchFn = fetch, now = Math.floor(Date
   const out = {
     t: now, source: 'Twelve Data', assets: [], errors: {}, requests: 0,
     history: prev.history || [], alerted: Object.assign({}, prev.alerted),
+    fator: await fatores(fetchFn, assets, prev.fator, now, log),
   };
   /* Controle de alertas ("rearmar"): o mesmo ativo/setup/direção fica em silêncio só enquanto continua ENTRADA.
      Se numa varredura ele deixa de ser ENTRADA, o aviso rearma e o próximo gatilho notifica de novo. */
@@ -112,8 +142,9 @@ async function runScan({ dir, key, topic, fetchFn = fetch, now = Math.floor(Date
       }
       fs.writeFileSync(file, JSON.stringify({ t: now, M15: pack(data.M15), H1: pack(data.H1), D1: pack(data.D1) }));
       data.H4 = MA.data.resample(data.H1, TF_SEC.H4, TF_SEC.H1, now);
-      const r = MA.setups.analyzeAsset(asset, data, settings, now);
-      const s = summarize(asset, r);
+      const conv = MA.data.toIndex(asset, data, (out.fator[asset.name] || {}).k); // NAS100/US30 na escala do índice
+      const r = MA.setups.analyzeAsset(conv.asset, conv.data, settings, now);
+      const s = summarize(conv.asset, r);
       out.assets.push(s);
       analyzed.add(asset.name);
       log(asset.name.padEnd(7), String(s.score).padStart(3), s.status, s.best ? s.best.name + ' ' + s.best.dir : '');
@@ -128,7 +159,7 @@ async function runScan({ dir, key, topic, fetchFn = fetch, now = Math.floor(Date
             entry: b.entry, sl: b.sl, tp1: b.tp1, tp2: b.tp2, tp3: b.tp3, triggered: b.triggered });
           const fx = (x) => (x == null ? '—' : x.toFixed(s.digits));
           const sent = await notify(fetchFn, topic, (b.asia ? 'ÁSIA (não validado) ' : '') + 'ENTRADA ' + b.dir.toUpperCase() + ' ' + asset.name + ' (score ' + b.score + ')',
-            [b.dir.toUpperCase() + ' ' + asset.name + ' @ ' + fx(b.entry) + (asset.proxy ? ' (' + asset.td + ')' : ''),
+            [b.dir.toUpperCase() + ' ' + asset.name + ' @ ' + fx(b.entry) + (asset.proxy ? ' (estimado pelo ' + asset.td + ')' : ''),
               'SL ' + fx(b.sl) + ' | TP1 ' + fx(b.tp1) + ' | TP3 ' + fx(b.tp3), b.name].join('\n'),
             SITE + '#' + asset.name);
           log('  -> ENTRADA, alerta', sent ? 'enviado' : 'NÃO enviado');
@@ -153,7 +184,7 @@ async function runScan({ dir, key, topic, fetchFn = fetch, now = Math.floor(Date
   return out;
 }
 
-module.exports = { runScan, needsFetch, marketOpen, summarize, scanOrder };
+module.exports = { runScan, fatores, needsFetch, marketOpen, summarize, scanOrder };
 
 if (require.main === module) {
   const dir = process.argv[2] || 'dados';

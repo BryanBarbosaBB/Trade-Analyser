@@ -229,13 +229,22 @@
         (b.status !== 'ENTRADA' && b.missing && b.missing.length ? '<b class="no-entry">NÃO ENTRAR.</b> <b>Falta:</b> ' + b.missing.map(esc).join(' · ') + ' · <b>preço atual ' + fmt(r.price, r.digits) + '</b>'
           : b.triggered ? 'Gatilho confirmado' : 'Área a ' + fmt(b.distAtr, 1) + ' ATR(H1)') + '</small>' : '<span class="muted">Nenhum setup</span>';
       return '<div class="row" data-asset="' + esc(r.name) + '">' +
-        '<div class="c-name"><div class="name">' + esc(r.name) + '</div><div class="price">' + fmt(r.price, r.digits) + (r.proxy ? ' · ' + esc(r.td) : '') + '</div></div>' +
+        '<div class="c-name"><div class="name">' + esc(r.name) + '</div><div class="price">' + fmt(r.price, r.digits) + (r.proxy ? ' <small title="' + esc(proxyInfo(r.name)) + '">' + (fatorDe(r.name) ? 'estimado' : esc(r.td)) + '</small>' : '') + '</div></div>' +
         '<div class="c-arrows arrows">' + ['D1', 'H4', 'H1', 'M15'].map((k) => arrow(r.bias[k])).join('') + '</div>' +
         '<div class="c-setup setup-txt">' + setup + (e ? '<small class="err">' + esc(e) + '</small>' : '') + '</div>' +
         '<div class="c-score score">' + r.score + '<span class="bar"><i style="width:' + r.score + '%"></i></span></div>' +
         '<div class="c-status">' + badge(r.status) + (b && b.asia ? ' <small class="warn-txt">Ásia</small>' : '') + '</div>' +
         '<div class="c-time time">' + MA.chart.fmtTime(r.updated + MA.data.TF_SEC.M15) + (r.stale ? ' <span class="err">(antigo)</span>' : '') + '</div></div>';
     }).join('');
+  }
+
+  const fatorDe = (name) => (state.scan && state.scan.fator && state.scan.fator[name]) || null;
+  /* Explica o preço do NAS100/US30: vem do ETF convertido para a escala do índice. */
+  function proxyInfo(name) {
+    const a = assetBy(name), f = fatorDe(name);
+    if (!f) return 'Preço do ' + a.proxy + ', não do índice.';
+    return 'Índice estimado: ' + a.td + ' × ' + f.k.toFixed(2) + (f.fech ? ' (proporção do fechamento de ' + f.fech.split('-').reverse().slice(0, 2).join('/') + ')' : '') +
+      '. Pode diferir alguns pontos da corretora. Fora do pregão americano (por volta de 11:30–18:00 de Brasília) o ' + a.td + ' não negocia e o preço fica parado.';
   }
 
   function renderHistory() {
@@ -264,7 +273,10 @@
     const now = state.scan.t;
     const data = { M15: un(v.M15), H1: un(v.H1), D1: un(v.D1) };
     data.H4 = MA.data.resample(data.H1, MA.data.TF_SEC.H4, MA.data.TF_SEC.H1, now);
-    const r = MA.setups.analyzeAsset(assetBy(name), data, settings, now);
+    // NAS100/US30: mesma conversão ETF -> índice da varredura (varredura antiga, sem proporção salva, fica no ETF)
+    const f = state.scan.fator, conv = f && MA.data.toIndex ? MA.data.toIndex(assetBy(name), data, (f[name] || {}).k) : { asset: assetBy(name), data, k: 1 };
+    const r = MA.setups.analyzeAsset(conv.asset, conv.data, settings, now);
+    r.conv = conv.asset; r.k = conv.k;
     state.full[name] = r;
     return r;
   }
@@ -288,7 +300,7 @@
   }
 
   function renderDetail() {
-    const name = state.current, r = state.full[name], asset = assetBy(name);
+    const name = state.current, r = state.full[name], asset = (r && r.conv) || assetBy(name), un = asset.proxy ? 'pontos' : 'pips';
     if (!r) {
       $('d-status').innerHTML = '<span class="err">' + esc(state.errors[name] || 'Sem dados') + '</span>';
       MA.chart.destroy();
@@ -307,7 +319,7 @@
         '<p class="muted">' + (b.triggered ? 'Gatilho confirmado na varredura (entrada a mercado).' : 'Ainda sem gatilho: não é sinal. Plano abaixo só para acompanhar (no backtest, ordem limite na área sem esperar o gatilho não deu lucro).') + '</p>' +
         (b.missing.length ? '<div class="missing"><b class="no-entry">NÃO ENTRAR AINDA</b> · preço atual ' + fmt(r.price, d) + '<br><b>Falta para ENTRADA:</b><ul class="tight">' + b.missing.map((x) => '<li>' + esc(x) + '</li>').join('') + '</ul>' +
           (b.triggered ? '' : '<small>O score ' + b.score + ' supõe a entrada em ' + fmt(p.entry, d) + ', não no preço atual.</small>') + '</div>' : '') +
-        '<table><tr><th></th><th>Preço</th><th class="num">pips</th><th class="num">R:R</th></tr>' +
+        '<table><tr><th></th><th>Preço</th><th class="num">' + un + '</th><th class="num">R:R</th></tr>' +
         '<tr><td>Entrada</td><td>' + fmt(p.entry, d) + '</td><td></td><td></td></tr>' +
         '<tr><td class="down">SL</td><td>' + fmt(p.sl, d) + '</td><td class="num">' + pips(p.sl) + '</td><td class="num">−1</td></tr>' +
         '<tr><td class="up">TP1</td><td>' + fmt(p.tp1, d) + '</td><td class="num">' + pips(p.tp1) + '</td><td class="num">1.0</td></tr>' +
@@ -315,7 +327,7 @@
         '<tr><td class="up">TP3 ★</td><td>' + fmt(p.tp3, d) + '</td><td class="num">' + pips(p.tp3) + '</td><td class="num">' + fmt(p.rr.tp3, 2) + '</td></tr></table>' +
         '<p class="muted">★ Saída sugerida pelo backtest: <b>TP3</b> com o stop original (deixar o lucro correr). TP1/TP2 são só referência.</p>' +
         (asset.proxy
-          ? '<p class="muted"><b>Lote:</b> não calculado — dados do ' + esc(asset.proxy) + '. Use os níveis como referência de estrutura.</p>'
+          ? '<p class="muted"><b>Lote:</b> não calculado (depende do contrato da corretora). ' + esc(proxyInfo(name)) + '</p>'
           : '<p><b>Lote:</b> ' + fmt(b.size.lots, 2) + ' (risco US$ ' + fmt(b.size.riskUsd, 0) + ' = ' + settings.riskPct + '% de US$ ' + settings.accountSize + ')</p>') +
         '<h3>Score ' + b.score + '/100</h3><div class="kv">' + Object.entries(b.breakdown).map(([k, v]) => '<span>' + (LABELS[k] || k) + '</span><span>' + v + ' / ' + MAXP[k] + '</span>').join('') + '</div>' +
         '<h3>Confirmações</h3><ul class="tight">' + b.confirmations.map((x) => '<li>' + esc(x) + '</li>').join('') + '</ul>' +
@@ -339,7 +351,7 @@
   }
 
   function renderCalc() {
-    const r = state.full[state.current], up = state.userPlan, d = r.digits, asset = assetBy(state.current);
+    const r = state.full[state.current], up = state.userPlan, d = r.digits, asset = r.conv || assetBy(state.current);
     let html = '<h2>SL/TP para minha entrada</h2><div class="calc-form">' +
       '<label>Direção<select id="calc-dir"><option value="compra">Compra</option><option value="venda">Venda</option></select></label>' +
       '<label>Entrada<input id="calc-entry" type="number" step="any" value="' + fmt(up ? up.plan.entry : r.price, d) + '"></label>' +
@@ -348,7 +360,7 @@
       const p = up.plan;
       html += '<table style="margin-top:10px"><tr><td class="down">SL</td><td>' + fmt(p.sl, d) + '</td><td class="up">TP1</td><td>' + fmt(p.tp1, d) + '</td></tr>' +
         '<tr><td class="up">TP2</td><td>' + fmt(p.tp2, d) + ' (' + fmt(p.rr.tp2, 2) + 'R)</td><td class="up">TP3</td><td>' + fmt(p.tp3, d) + ' (' + fmt(p.rr.tp3, 2) + 'R)</td></tr></table>' +
-        '<p><b>Lote:</b> ' + (asset.proxy ? '— (ETF)' : fmt(up.size.lots, 2)) + ' · SL ' + fmt(up.size.pips, 1) + ' pips · invalidação: ' + (up.invalidation != null ? 'swing H1 em ' + fmt(up.invalidation, d) : 'nenhum swing — SL mínimo') + '</p>' +
+        '<p><b>Lote:</b> ' + (asset.proxy ? '—' : fmt(up.size.lots, 2)) + ' · SL ' + fmt(up.size.pips, 1) + (asset.proxy ? ' pontos' : ' pips') + ' · invalidação: ' + (up.invalidation != null ? 'swing H1 em ' + fmt(up.invalidation, d) : 'nenhum swing — SL mínimo') + '</p>' +
         (p.notes.length ? '<ul class="tight">' + p.notes.map((x) => '<li class="muted">' + esc(x) + '</li>').join('') + '</ul>' : '') +
         '<button id="btn-calc-clear">Voltar ao plano do setup</button>';
     }
@@ -371,7 +383,8 @@
       if (e.target.id === 'btn-calc') {
         const entry = parseFloat($('calc-entry').value);
         if (!Number.isFinite(entry)) return;
-        state.userPlan = MA.setups.planForEntry(state.full[state.current], assetBy(state.current), settings, $('calc-dir').value, entry);
+        const r = state.full[state.current];
+        state.userPlan = MA.setups.planForEntry(r, r.conv || assetBy(state.current), settings, $('calc-dir').value, entry);
         renderDetail();
       } else if (e.target.id === 'btn-calc-clear') { state.userPlan = null; renderDetail(); }
     });

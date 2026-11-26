@@ -27,9 +27,17 @@ function fakeSeries(symbol, interval, size, now) {
   return { status: 'ok', values };
 }
 
+/* Yahoo falso: fechamentos diários com índice = ETF × 41 (^NDX) ou × 100 (^DJI); o de hoje vale outra proporção (não pode ser usado). */
+function fakeYahoo(url, now) {
+  const sym = decodeURIComponent(url.split('/chart/')[1].split('?')[0]), k = { '^NDX': 41, '^DJI': 100 }[sym] || 1;
+  const d0 = Math.floor(now / 86400) * 86400, ts = [3, 2, 1, 0].map((i) => d0 - i * 86400 + 14.5 * 3600);
+  return { chart: { result: [{ timestamp: ts, indicators: { quote: [{ close: ts.map((t, i) => 100 * k * (i === 3 && k > 1 ? 1.1 : 1)) }] } }] } };
+}
+
 function fakeFetch(log, now) {
   return async (url, opts) => {
     if (url.startsWith('https://ntfy.sh')) { log.ntfy.push(JSON.parse(opts.body)); return { ok: true }; }
+    if (url.includes('finance.yahoo.com')) { (log.yahoo = log.yahoo || []).push(url); return { json: async () => fakeYahoo(url, now) }; }
     const q = new URL(url).searchParams;
     log.td.push(q.get('symbol') + ' ' + q.get('interval'));
     return { json: async () => fakeSeries(q.get('symbol'), q.get('interval'), +q.get('outputsize'), now) };
@@ -131,6 +139,38 @@ test('ETFs só gastam consulta no pregão americano', () => {
   assert.equal(marketOpen(qqq, at(3)), false);
   assert.equal(marketOpen(qqq, at(15)), true);
   assert.equal(marketOpen(eur, at(3)), true);
+});
+
+test('NAS100/US30 na escala do índice: proporção do último fechamento antes de hoje, guardada no dia e usada pelo site', async () => {
+  const dir = tmp(), log = { td: [], ntfy: [] };
+  const out = await runScan({ dir, key: 'k', topic: '', fetchFn: fakeFetch(log, NOW), now: NOW, throttle: noThrottle, log: quiet });
+  assert.equal(out.fator.NAS100.k, 41); assert.equal(out.fator.US30.k, 100);
+  assert.equal(out.fator.NAS100.fech, new Date((NOW - 86400) * 1000).toISOString().slice(0, 10));
+  const nas = out.assets.find((a) => a.name === 'NAS100'), raw = JSON.parse(fs.readFileSync(path.join(dir, 'velas', 'NAS100.json')));
+  assert.ok(Math.abs(nas.price - raw.M15[raw.M15.length - 1][4] * 41) < 0.01, 'preço do resumo = último QQQ × 41');
+  // velas salvas continuam do ETF; o site converte com a mesma proporção e chega ao mesmo resultado
+  const un = (a) => a.map(([t, o, h, l, c]) => ({ t, o, h, l, c })), data = { M15: un(raw.M15), H1: un(raw.H1), D1: un(raw.D1) };
+  data.H4 = MA.data.resample(data.H1, MA.data.TF_SEC.H4, MA.data.TF_SEC.H1, NOW);
+  const conv = MA.data.toIndex(MA.DEFAULT_ASSETS.find((a) => a.name === 'NAS100'), data, out.fator.NAS100.k);
+  const r = MA.setups.summarize(conv.asset, MA.setups.analyzeAsset(conv.asset, conv.data, Object.assign(structuredClone(MA.DEFAULT_SETTINGS), { asiaSignals: true }), NOW));
+  assert.deepEqual(r, nas);
+  // mesma data: não consulta o Yahoo de novo; Yahoo fora do ar: fica com a anterior
+  const n = log.yahoo.length;
+  await runScan({ dir, key: 'k', topic: '', fetchFn: fakeFetch(log, NOW + 1800), now: NOW + 1800, throttle: noThrottle, log: quiet });
+  assert.equal(log.yahoo.length, n);
+  const { fatores } = require('../scripts/scan.js'), fora = async () => { throw new Error('fora do ar'); };
+  assert.deepEqual((await fatores(fora, MA.DEFAULT_ASSETS, out.fator, NOW + 86400, quiet)).NAS100, out.fator.NAS100);
+  assert.equal((await fatores(fora, MA.DEFAULT_ASSETS, undefined, NOW, quiet)).NAS100.k, 41.09);
+  assert.equal(MA.data.toIndex(MA.DEFAULT_ASSETS[0], data, 41).k, 1, 'ouro não muda');
+});
+
+test('falta do gatilho RSI: diz exatamente o que precisa acontecer', () => {
+  const f = MA.setups.rsiFalta, base = Array(20).fill(55);
+  assert.match(f('venda', base), /passar de 70 e depois voltar a cair/);
+  assert.match(f('venda', [...base, 74.7, 74.6]), /voltar abaixo de 70/);
+  assert.match(f('venda', [...base, 74.7, 68.1, 68.6]), /voltar a cair: já saiu da sobrecompra, mas subiu/);
+  assert.equal(MA.setups.rsiTrigger('venda', [...base, 74.7, 68.6, 68.1]), true);
+  assert.match(f('compra', [...base, 25, 31, 30.5]), /voltar a subir: já saiu da sobrevenda/);
 });
 
 test('orçamento: um dia inteiro no agendamento do workflow cabe nas 800 consultas da Twelve Data', async () => {

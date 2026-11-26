@@ -25,6 +25,17 @@
     return Math.max(...win) > 70 && now < 70 && now < prev;
   }
 
+  /* Texto do que falta no gatilho do RSI, conforme o ponto em que ele está (mesma regra de rsiTrigger). */
+  function rsiFalta(dir, rsi) {
+    const n = rsi.length, now = rsi[n - 1], win = rsi.slice(-9, -1), x = ' (está em ' + now.toFixed(1) + ')';
+    if (dir === 'compra') {
+      if (!(Math.min(...win) < 30)) return 'RSI M15 cair abaixo de 30 e depois voltar a subir' + x;
+      return now <= 30 ? 'RSI M15 voltar acima de 30' + x : 'RSI M15 voltar a subir: já saiu da sobrevenda, mas caiu na última vela' + x;
+    }
+    if (!(Math.max(...win) > 70)) return 'RSI M15 passar de 70 e depois voltar a cair' + x;
+    return now >= 70 ? 'RSI M15 voltar abaixo de 70' + x : 'RSI M15 voltar a cair: já saiu da sobrecompra, mas subiu na última vela' + x;
+  }
+
   function momentum(dir, m15, triggerOk) {
     const s = sgn(dir), h = m15.ind.macdHist, n = h.length;
     let pts = triggerOk ? 8 : 0;
@@ -169,7 +180,7 @@
       const vela = 'vela M15 de ' + (buy ? 'alta fechar acima de ' : 'baixa fechar abaixo de ') + f(setup.entryWatch);
       if (setup.name.startsWith('Pullback')) {
         if (!setup.inArea) out.push('preço ' + (buy ? 'cair' : 'subir') + ' até ' + f(setup.entryWatch) + far);
-        if (!setup.rsiOk) out.push('RSI M15 sair de ' + (buy ? 'sobrevenda (<30)' : 'sobrecompra (>70)'));
+        if (!setup.rsiOk) out.push(rsiFalta(setup.dir, ctx.tf.M15.ind.rsi));
       } else out.push(setup.inArea ? vela : 'preço ' + (buy ? 'cair' : 'subir') + ' até ' + f(setup.entryWatch) + far + ' e, depois disso, ' + vela);
     }
     if (entryScore < entryMin) out.push('score ' + entryScore + ' (mínimo ' + entryMin + ')');
@@ -295,5 +306,5 @@
     };
   }
 
-  MA.setups = { summarize, analyzeAsset, analyzeFromTF, planForEntry, alignment, rsiTrigger, pullbackAreas };
+  MA.setups = { summarize, analyzeAsset, analyzeFromTF, planForEntry, alignment, rsiTrigger, rsiFalta, pullbackAreas };
 })(globalThis.MA = globalThis.MA || {});

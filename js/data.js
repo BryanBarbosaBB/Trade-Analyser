@@ -106,6 +106,18 @@
     return dow >= 1 && dow <= 5 && m >= 13 * 60 + 30 && m <= 21 * 60 + 15;
   }
 
+  /* NAS100/US30: converte as velas do ETF para a escala do índice (multiplica pela proporção índice/ETF).
+     RSI, ADX e score não mudam com a escala; preços, ATR e níveis passam a ser do índice, e 1 ponto = 1,00 do índice.
+     k = proporção do dia (scan.json → fator); sem ela, usa a de config.js. Ativos que não são ETF voltam iguais. */
+  function toIndex(asset, data, k) {
+    if (!asset.proxy || !asset.ratio) return { asset, data, k: 1 };
+    k = k > 0 ? k : asset.ratio;
+    const m = (c) => c.map((x) => ({ t: x.t, o: x.o * k, h: x.h * k, l: x.l * k, c: x.c * k }));
+    const out = {};
+    for (const tf in data) out[tf] = Array.isArray(data[tf]) ? m(data[tf]) : data[tf];
+    return { asset: { ...asset, pip: 1, spread: asset.spread * k }, data: out, k };
+  }
+
   /* Limite do dia (800) esgotado: esperar um minuto não adianta. */
   const isDayLimit = (json) => !!json && json.code === 429 && /for the day|daily/i.test(json.message || '');
 
@@ -153,5 +165,5 @@
     return { M15, H1, H4, D1, source: 'Twelve Data' };
   }
 
-  MA.data = { parse, resample, needsFetch, marketOpen, isDayLimit, isFresh, getAll, clearCache, TF_SEC };
+  MA.data = { parse, resample, toIndex, needsFetch, marketOpen, isDayLimit, isFresh, getAll, clearCache, TF_SEC };
 })(globalThis.MA = globalThis.MA || {});
